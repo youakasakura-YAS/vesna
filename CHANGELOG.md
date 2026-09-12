@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0
+
+### Added
+- 内置 `#regwrite`、`#regdelete`、`#shell`
+- `vesna --install` 自动注册文件关联
+- `vesna --version`、`vesna --help`
+- 文件类型图标、右键"用 Vesna 运行"、新建菜单
+
+### Changed
+- 安装程序完全用 Vesna 写
+
 ## 0.2.0
 
 ### Added

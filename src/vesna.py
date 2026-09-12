@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Vesna 0.2.0 — Scripts of spring"""
+"""Vesna 0.3.0 — Scripts of spring"""
 
 import sys
 import os
@@ -10,16 +10,24 @@ VERSION = "0.2.0"
 INSTALL_SCRIPT = r'''
 /* Vesna 内置安装程序 */
 
-target = "C:\\Vesna",
 src = #cwd(),
+args = #args(),
+
+target = "C:\\Vesna",
+if #len(args) >= '1'-
+-target = #path_clean(args['1']),
 
 print("=== Vesna 安装程序 ==="),
 print("源目录: " + src),
 print("目标目录: " + target),
 print(""),
 
-print("[1/5] 检查源文件..."),
-if not #fexists(src + "\\bin\\vesna.exe")-
+print("[1/6] 检查源文件..."),
+prefix = #sub(target; '1'; '3'),
+if not #fexists(prefix)-
+-print("错误: 盘符不存在 " + prefix),
+-#exit('1'),
+if not #fexists(src + "\\vesna.exe")-
 -print("  错误: 找不到 vesna.exe"),
 -#exit('1'),
 if not #fexists(src + "\\lib\\csv.ves")-
@@ -27,7 +35,7 @@ if not #fexists(src + "\\lib\\csv.ves")-
 -#exit('1'),
 print("  OK"),
 
-print("[2/5] 创建目录..."),
+print("[2/6] 创建目录..."),
 #mkdir(target),
 #mkdir(target + "\\bin"),
 #mkdir(target + "\\lib"),
@@ -35,8 +43,10 @@ print("[2/5] 创建目录..."),
 #mkdir(target + "\\docs"),
 print("  OK"),
 
-print("[3/5] 复制文件..."),
-#copy(src + "\\bin\\vesna.exe"; target + "\\bin\\vesna.exe"),
+print("[3/6] 复制文件..."),
+#copy(src + "\\vesna.exe"; target + "\\bin\\vesna.exe"),
+if #fexists(src + "\\vesna.ico")-
+-#copy(src + "\\vesna.ico"; target + "\\vesna.ico"),
 print("  vesna.exe"),
 files = #ls(src + "\\lib"),
 for f in files-
@@ -55,7 +65,7 @@ if #fexists(src + "\\README.md")-
 if #fexists(src + "\\LICENSE")-
 -#copy(src + "\\LICENSE"; target + "\\LICENSE"),
 
-print("[4/5] 设置环境变量..."),
+print("[4/6] 设置环境变量..."),
 #setenv("VESNA_HOME"; target),
 print("  VESNA_HOME = " + target),
 old_path = #getenv("PATH"),
@@ -65,7 +75,15 @@ if #find(old_path; bin_path) == '0'-
 -print("  PATH 已追加 " + bin_path),
 else-
 -print("  PATH 已包含 " + bin_path),
-print("[5/5] 安装完成"),
+print("[5/6] 注册文件关联..."),
+#regwrite("HKCU"; "Software\\Classes\\.ves"; ""; "VesnaScript"),
+#regwrite("HKCU"; "Software\\Classes\\.ves\\ShellNew"; "NullFile"; ""),
+#regwrite("HKCU"; "Software\\Classes\\VesnaScript"; ""; "Vesna 脚本"),
+#regwrite("HKCU"; "Software\\Classes\\VesnaScript\\DefaultIcon"; ""; target + "\\vesna.ico"),
+#regwrite("HKCU"; "Software\\Classes\\VesnaScript\\shell\\run"; ""; "用 Vesna 运行"),
+#regwrite("HKCU"; "Software\\Classes\\VesnaScript\\shell\\run\\command"; ""; "\"" + target + "\\bin\\vesna.exe\" \"%1\""),
+print("  OK"),
+print("[6/6] 安装完成"),
 print(""),
 print("请重开 cmd 后输入 vesna 测试。"),
 '''
@@ -336,6 +354,7 @@ BUILTINS = {
     'contains','contains',
     'mkdir', 'copy', 'rmdir', 'rename',
     'getenv', 'setenv', 'cwd', 'chdir',
+    'regwrite', 'regdelete', 'shell', 'path_clean',
 }
 
 TYPE_KEYWORDS = {'int', 'str', 'float', 'list', 'dict', 'bool'}
@@ -1794,7 +1813,56 @@ class Interp:
                 os.chdir(path)
             except FileNotFoundError:
                 raise VesnaError(f"-chdir 目录不存在: {path}")
-            return None      
+            return None
+
+        if name == 'regwrite':
+            import winreg
+            root = ev(0)
+            path = ev(1)
+            key = ev(2)
+            value = ev(3)
+            roots = {
+                'HKCU': winreg.HKEY_CURRENT_USER,
+                'HKLM': winreg.HKEY_LOCAL_MACHINE,
+            }
+            h = roots.get(root)
+            if h is None:
+                raise VesnaError(f"-regwrite 未知根: {root}")
+            with winreg.CreateKey(h, path) as k:
+                winreg.SetValueEx(k, key, 0, winreg.REG_SZ, value)
+            return None
+
+        if name == 'regdelete':
+            import winreg
+            root = ev(0)
+            path = ev(1)
+            roots = {
+                'HKCU': winreg.HKEY_CURRENT_USER,
+                'HKLM': winreg.HKEY_LOCAL_MACHINE,
+            }
+            h = roots.get(root)
+            if h is None:
+                raise VesnaError(f"-regdelete 未知根: {root}")
+            try:
+                winreg.DeleteKey(h, path)
+            except FileNotFoundError:
+                pass
+            return None
+
+        if name == 'shell':
+            import subprocess
+            cmd = ev(0)
+            if not isinstance(cmd, str):
+                raise VesnaError("-shell 需要字符串")
+            subprocess.run(cmd, shell=True, capture_output=True)
+            return None
+
+        if name == 'path_clean':
+            import os as _os
+            p = ev(0)
+            if not isinstance(p, str):
+                raise VesnaError("-path_clean 需要字符串")
+            return _os.path.abspath(p)      
 
         raise VesnaError(f"未知内置 -{name}")
 
@@ -1928,7 +1996,7 @@ def main():
 
     if arg == '--install':
         try:
-            code = run_source(INSTALL_SCRIPT, [], os.getcwd(), '<install>', catch_exit=True)
+            code = run_source(INSTALL_SCRIPT, sys.argv[2:], os.getcwd(), '<install>', catch_exit=True)
         except VesnaError as e:
             print(f"安装失败: {e}", file=sys.stderr)
             sys.exit(1)

@@ -1,6 +1,9 @@
 # Vesna
 
+<img src="icon.png" width="128" alt="Vesna">
+
 > *Scripts of spring*
+
 
 Vesna 是一门轻量级文本处理脚本语言。文件后缀 `.ves`。
 
