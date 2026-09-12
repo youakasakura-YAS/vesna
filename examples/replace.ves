@@ -1,0 +1,10 @@
+args = #args(),
+if #len(args) < '3'-
+-print("用法: vesna replace.ves <查找> <替换> <文件>"),
+-#exit('1'),
+
+find_str = args['1'],
+repl = args['2'],
+path = args['3'],
+content = #fread(path),
+print(#replace(content; find_str; repl)),

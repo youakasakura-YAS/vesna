@@ -1,0 +1,15 @@
+/* Vesna 标准库：csv.ves */
+
+def csv_parse(text)-
+-lines = #split(text; "\n")
+-rows = []
+-for line in lines-
+--if #len(line) > '0'-
+---#append(rows; #split(line; ","))
+-back(rows)
+
+def csv_write(rows)-
+-out = ""
+-for row in rows-
+--out = out + #join(row; ",") + "\n"
+-back(out)

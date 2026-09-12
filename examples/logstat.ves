@@ -1,0 +1,28 @@
+args = #args(),
+if #len(args) < '1'-
+-print("用法: vesna logstat.ves <日志文件>"),
+-#exit('1'),
+
+path = args['1'],
+text = #fread(path),
+lines = #lines(text),
+
+counts = {},
+total = '0',
+
+for line in lines-
+-if #len(line) > '0'-
+--total += '1'
+--parts = #split(line; " ")
+--if #len(parts) >= '3'-
+---level = parts['3']
+---if #has_key(counts; level)-
+----counts[level] += '1'
+---else-
+----counts[level] = '1'
+
+print("总行数: " + #str(total)),
+print("---"),
+
+for k in counts-
+-print(k + ": " + #str(counts[k])),
