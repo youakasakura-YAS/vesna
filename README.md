@@ -18,11 +18,22 @@ Vesna 是一门轻量级文本处理脚本语言。文件后缀 `.ves`。
 ## 快速开始
 
 ### 安装
+1.解压
+把 vesna-0.3.0-windows-x64.zip 解压到任意目录，比如：
+```
+C:\Users\Tom\Downloads\vesna-0.3.0-windows-x64\
+```
+默认安装到 C:\Vesna：
 
-1. 把项目放到 `C:\Vesna\`
-2. 设置环境变量：
-   - `VESNA_HOME = C:\Vesna`
-   - `PATH = %PATH%;C:\Vesna\bin`
+```bat
+vesna.exe --install
+```
+
+装到自定义路径：
+
+```bat
+vesna.exe --install D:\MyVesna
+```
 
 ### 运行脚本
 
