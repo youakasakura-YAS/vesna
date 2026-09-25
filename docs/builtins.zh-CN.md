@@ -202,6 +202,7 @@ d = {"a": '1'; "b": '2'},
 | `#shell(cmd)` | 运行 shell 命令 |
 | `#path_clean(p)` | 规范化路径 |
 | `#cwd()` | 当前工作目录 |
+| `#cpdir(src; dst)` | 递归复制目录 |
 
 ```text
 args = #args(),

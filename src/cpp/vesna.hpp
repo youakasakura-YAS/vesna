@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <set>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -124,6 +125,7 @@ struct Stmt {
         ASSIGN, EXPR, BACK, BREAK, CONTINUE, IF, WHILE, FOR,
         DEF, TRY, IMPORT, ERR
     } k;
+    int line = -1;                   // 语句起始物理行号（调试器用）
     // ASSIGN
     std::string lv_name;
     int64_t lv_nid = 0;
@@ -243,6 +245,22 @@ struct Interp {
     std::string script_dir;
     std::vector<std::shared_ptr<Env>> kept_;  // 保活被闭包引用的环境
 
+    // ---- 调试器状态 ----
+    bool dbg = false;
+    std::string dbg_file;
+    std::set<int> dbg_breaks;
+    int dbg_mode = 0;                  // 0=运行 1=step 2=next
+    int dbg_next_depth = 0;
+    std::shared_ptr<Env> dbg_env;
+    int dbg_line = 0;
+    std::string dbg_fname;
+    std::vector<std::pair<std::string, int>> frames;   // 调用栈（名, 当前行）
+    void dbgCheck(const std::shared_ptr<Stmt>& stmt, const std::shared_ptr<Env>& env);
+    void dbgLoop();
+    void dbgPrintFrames();
+    void dbgPrintList();
+    void dbgHelp();
+
     explicit Interp(std::vector<std::string> a = {}, std::string dir = ".")
         : g(std::make_shared<Env>()), argv(std::move(a)), script_dir(std::move(dir)) {}
 
@@ -265,10 +283,13 @@ struct Interp {
 // 入口辅助
 // ============================================================
 bool fileExists(const std::string& path);
+std::string readFileUtf8(const std::string& path);
 std::string findVesnaHome();
 int runSource(const std::string& src, const std::vector<std::string>& argv,
-              const std::string& script_dir, const std::string& filename, bool catch_exit);
+              const std::string& script_dir, const std::string& filename, bool catch_exit,
+              bool dbg = false, const std::string& dbg_file = "");
 int runFile(const std::string& path, const std::vector<std::string>& argv);
+int runFileDbg(const std::string& path, const std::vector<std::string>& argv);
 void repl();
 int mainCli(int argc, char** argv);
 

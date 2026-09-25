@@ -1,0 +1,9 @@
+x = '1',
+y = '2',
+def add(a; b)-
+-c = a + b,
+-back(c),
+print("x=" + #str(x)),
+print("y=" + #str(y)),
+z = add(x; y),
+print("z=" + #str(z)),

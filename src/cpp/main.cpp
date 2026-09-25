@@ -1,12 +1,10 @@
 // main.cpp — Vesna 1.0.0 C++ 命令行入口
 #include "vesna.hpp"
+#include "platform.h"
 
 #include <iostream>
 #include <string>
 #include <vector>
-
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
 
 namespace vesna {
 
@@ -142,8 +140,7 @@ print("请重开 cmd 后生效。"),
 
 int mainCli(int argc, char** argv) {
     // 控制台 UTF-8，保证中文输出正确
-    SetConsoleOutputCP(CP_UTF8);
-    SetConsoleCP(CP_UTF8);
+    setConsoleUtf8();
 
     // 关闭 iostream 与 C stdio 的同步（提升输出吞吐）
     std::ios::sync_with_stdio(false);
@@ -179,6 +176,44 @@ int mainCli(int argc, char** argv) {
         }
     }
 
+    if (arg == "--debug") {
+        if (argc < 3) {
+            std::cerr << "用法: vesna --debug <脚本.ves> [参数...]" << std::endl;
+            return 1;
+        }
+        std::string path = argv[2];
+        if (!fileExists(path)) {
+            std::cerr << "找不到文件: " << path << std::endl;
+            return 1;
+        }
+        std::vector<std::string> args;
+        for (int i = 3; i < argc; ++i) args.emplace_back(argv[i]);
+        std::cout << "Vesna 调试器 " << VERSION << " —— 输入 help 查看命令" << std::endl;
+        try {
+            return runFileDbg(path, args);
+        } catch (VesnaError& e) {
+            std::cerr << "错误: " << e.str() << std::endl;
+            return 1;
+        }
+    }
+
+    if (arg == "--pkg") {
+        std::vector<std::string> args;
+        for (int i = 2; i < argc; ++i) args.emplace_back(argv[i]);
+        std::string pkg_script = findVesnaHome() + "\\lib\\pkg.ves";
+        if (!fileExists(pkg_script)) {
+            std::cerr << "找不到包管理器脚本: " << pkg_script << std::endl;
+            return 1;
+        }
+        try {
+            std::string src = readFileUtf8(pkg_script);
+            return runSource(src, args, ".", pkg_script, true);
+        } catch (VesnaError& e) {
+            std::cerr << "包管理器错误: " << e.str() << std::endl;
+            return 1;
+        }
+    }
+
     if (arg == "--version") {
         std::cout << "Vesna " << VERSION << std::endl;
         return 0;
@@ -190,6 +225,8 @@ int mainCli(int argc, char** argv) {
                   << "  vesna                        进入 REPL\n"
                   << "  vesna --install              安装 Vesna\n"
                   << "  vesna --uninstall            卸载 Vesna（删目录+环境变量+注册表）\n"
+                  << "  vesna --debug <脚本>         调试运行脚本（断点/单步/变量）\n"
+                  << "  vesna --pkg <命令>           包管理器（init/install/remove/list/search）\n"
                   << "  vesna --version              显示版本\n"
                   << "  vesna --help                 显示帮助\n";
         return 0;

@@ -59,6 +59,26 @@ vesna wc.ves sample.txt
 vesna grep.ves "ERROR" log.txt
 ```
 
+### 4. Debug scripts
+
+```bat
+vesna --debug hello.ves
+```
+
+Interactive commands: `c`/`continue` continue, `n`/`next` next line, `s`/`step` step into, `q`/`quit` quit, `b <line>` set breakpoint, `del <line>` delete breakpoint, `p <expr>` evaluate expression, `vars` list variables, `bt` backtrace, `list` show source, `help` help.
+
+### 5. Package manager (vpm)
+
+```bat
+vesna --pkg init                 # scaffold vesna-pkg.json
+vesna --pkg install <dir|zip|owner:repo>
+vesna --pkg remove <name>
+vesna --pkg list
+vesna --pkg search <keyword>
+```
+
+Installed packages are imported with `import <name>` from `<VESNA_HOME>\packages\<name>\<name>.ves`.
+
 ---
 
 ## Hello, World
@@ -150,20 +170,30 @@ C++ optimizations (details in [CHANGELOG.md](CHANGELOG.md)): regex cache, litera
 
 ## Building from source
 
-Requires [MinGW-w64](https://www.mingw-w64.org/) (g++ 11+, Windows 10+):
+### Windows (MinGW-w64, g++ 11+, Windows 10+)
 
 ```bat
 cd src\cpp
 g++ -std=c++17 -O3 -flto -static -Wall -Wextra vesna.cpp main.cpp -o vesna.exe -ladvapi32
 ```
 
-Regression tests (line-by-line output must match the Python reference):
+### Cross-platform (CMake, Windows / Linux / macOS)
+
+```bat
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+```
+
+The source tree is portable: `src/cpp/platform.h` abstracts UTF-8/UTF-16 conversion, shell, cwd, chdir, environment and the temp dir. Registry builtins (`-regwrite` / `-regdelete` / `-regenv`) report "not supported on this platform" on non-Windows.
+
+### Regression tests
+
+Outputs must match the golden baselines in `src/cpp/tests/golden/` (see its README for regeneration commands):
 
 ```bat
 vesna.exe tests\regression.ves
 vesna.exe tests\fs_test.ves
-git clone https://github.com/youakasakura-YAS/vesna-py   # reference impl
-python vesna-py\src\vesna.py tests\regression.ves        # outputs must match
+vesna.exe tests\smoke04.ves
 ```
 
 ---

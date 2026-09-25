@@ -21,11 +21,7 @@
 #include <set>
 #include <sstream>
 
-#ifndef _WIN32
-#error "Vesna C++ 版当前仅支持 Windows（使用 winreg / 宽字符 API）"
-#endif
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
+#include "platform.h"
 
 namespace vesna {
 
@@ -33,24 +29,6 @@ static std::string parentDir(const std::string& path);
 static std::string strFloat(double f);
 const std::string VERSION = "1.0.0";
 
-// ============================================================
-// 基础工具：UTF-8 <-> UTF-16
-// ============================================================
-static std::wstring utf8ToWide(const std::string& s) {
-    if (s.empty()) return L"";
-    int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
-    std::wstring out(n, L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), &out[0], n);
-    return out;
-}
-
-static std::string wideToUtf8(const std::wstring& ws) {
-    if (ws.empty()) return "";
-    int n = WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), (int)ws.size(), nullptr, 0, nullptr, nullptr);
-    std::string out(n, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), (int)ws.size(), &out[0], n, nullptr, nullptr);
-    return out;
-}
 
 // ============================================================
 // 标识符 intern
@@ -291,7 +269,7 @@ static std::string toWindowsNewlines(const std::string& in) {
     return out;
 }
 
-static std::string readFileUtf8(const std::string& path) {
+std::string readFileUtf8(const std::string& path) {
     std::wstring wp = utf8ToWide(path);
     FILE* f = _wfopen(wp.c_str(), L"rb");
     if (!f) throw VesnaError("-fread 失败: 无法打开 " + path);
@@ -482,7 +460,7 @@ static const std::set<std::string> BUILTINS = {
     "contains",
     "mkdir", "copy", "rmdir", "rename",
     "getenv", "setenv", "cwd", "chdir",
-    "regwrite", "regdelete", "shell", "path_clean", "regenv",
+    "regwrite", "regdelete", "shell", "path_clean", "regenv", "cpdir",
     /* ---- 0.4 閫氱敤缂栫▼璇█鎵╁厖 ---- */
     "sqrt", "floor", "ceil", "exp", "log", "log10",
     "sin", "cos", "tan", "sign", "clamp",
@@ -1116,7 +1094,9 @@ std::shared_ptr<Stmt> Parser::stmt(int min_indent) {
     if (ln.indent < min_indent) return nullptr;
     size_t start = pos;
     try {
-        return stmtInner(min_indent);
+        auto s = stmtInner(min_indent);
+        if (s) s->line = ln.line_no;
+        return s;
     } catch (VesnaError& e) {
         if (pos <= start) pos = start + 1;
         int line = e.line >= 0 ? e.line : ln.line_no;
@@ -1442,10 +1422,13 @@ static double pyModFloat(double a, double b) {
 // 运行时：Interp
 // ============================================================
 void Interp::run(const std::vector<std::shared_ptr<Stmt>>& program) {
+    if (dbg) frames.emplace_back("<main>", 0);
     for (auto& s : program) exec(s, g);
+    if (dbg) frames.pop_back();
 }
 
 void Interp::exec(const std::shared_ptr<Stmt>& stmt, const std::shared_ptr<Env>& env) {
+    if (dbg && stmt->line > 0) dbgCheck(stmt, env);
     switch (stmt->k) {
         case Stmt::K::ASSIGN:
             assign(stmt->lv_nid, stmt->lv_idx, stmt->op_kind, eval(stmt->val, env), env);
@@ -1545,6 +1528,105 @@ void Interp::exec(const std::shared_ptr<Stmt>& stmt, const std::shared_ptr<Env>&
         default:
             throw VesnaError("未知语句");
     }
+}
+
+// ---- 调试器 ----
+void Interp::dbgCheck(const std::shared_ptr<Stmt>& stmt, const std::shared_ptr<Env>& env) {
+    dbg_line = stmt->line;
+    dbg_env = env;
+    dbg_fname = frames.empty() ? "<main>" : frames.back().first;
+    if (!frames.empty()) frames.back().second = dbg_line;
+    bool hit = dbg_breaks.count(stmt->line) > 0;
+    bool stepping = false;
+    if (dbg_mode == 1) stepping = true;
+    else if (dbg_mode == 2) stepping = (int)frames.size() <= dbg_next_depth;
+    if (hit || stepping) dbgLoop();
+}
+
+void Interp::dbgLoop() {
+    std::cout << "停在 " << dbg_file << ":" << dbg_line << "（" << dbg_fname << "）\n";
+    while (true) {
+        std::cout << "vesna-dbg> ";
+        std::cout.flush();
+        std::string line;
+        if (!std::getline(std::cin, line)) { dbg_mode = 0; return; }
+        std::string cmd = trimStr(line);
+        if (cmd.empty()) continue;
+        if (cmd == "c" || cmd == "continue") { dbg_mode = 0; return; }
+        if (cmd == "n" || cmd == "next") { dbg_mode = 2; dbg_next_depth = (int)frames.size(); return; }
+        if (cmd == "s" || cmd == "step") { dbg_mode = 1; return; }
+        if (cmd == "q" || cmd == "quit") { std::cout << "已退出调试器\n"; std::exit(0); }
+        if (cmd == "bt" || cmd == "backtrace") { dbgPrintFrames(); continue; }
+        if (cmd == "list" || cmd == "l") { dbgPrintList(); continue; }
+        if (cmd.rfind("break ", 0) == 0 || cmd.rfind("b ", 0) == 0) {
+            int pos = (cmd[1] == ' ') ? 2 : 6;
+            int ln = atoi(trimStr(cmd.substr(pos)).c_str());
+            if (ln <= 0) { std::cout << "用法: break <行号>\n"; continue; }
+            dbg_breaks.insert(ln);
+            std::cout << "断点 @ " << ln << "\n";
+            continue;
+        }
+        if (cmd.rfind("del ", 0) == 0) {
+            int ln = atoi(trimStr(cmd.substr(4)).c_str());
+            dbg_breaks.erase(ln);
+            std::cout << "已删除断点 " << ln << "\n";
+            continue;
+        }
+        if (cmd.rfind("print ", 0) == 0 || cmd.rfind("p ", 0) == 0) {
+            std::string expr = trimStr(cmd.substr(cmd[1] == ' ' ? 2 : 6));
+            try {
+                auto e = parseExpr(expr, dbg_line);
+                Value v = eval(e, dbg_env);
+                std::cout << fmt(v) << "\n";
+            } catch (VesnaError& err) {
+                std::cout << "错误: " << err.msg << "\n";
+            }
+            continue;
+        }
+        if (cmd == "vars" || cmd == "v") {
+            for (auto& [id, val] : dbg_env->vars)
+                std::cout << "  " << internName(id) << " = " << fmt(val) << "\n";
+            continue;
+        }
+        if (cmd == "help" || cmd == "h") { dbgHelp(); continue; }
+        std::cout << "未知命令，输入 help 查看\n";
+    }
+}
+
+void Interp::dbgPrintFrames() {
+    for (size_t i = frames.size(); i-- > 0;)
+        std::cout << "  #" << i << " " << frames[i].first << ":" << frames[i].second << "\n";
+}
+
+void Interp::dbgPrintList() {
+    std::string src;
+    try { src = readFileUtf8(dbg_file); } catch (...) { std::cout << "无法读取源码\n"; return; }
+    std::vector<std::string> lines;
+    std::string cur;
+    for (char ch : src) {
+        if (ch == '\n') { lines.push_back(cur); cur.clear(); }
+        else cur += ch;
+    }
+    if (!cur.empty() || src.empty()) lines.push_back(cur);
+    int lo = std::max(1, dbg_line - 3), hi = std::min((int)lines.size(), dbg_line + 3);
+    for (int i = lo; i <= hi; ++i) {
+        std::string mark = (i == dbg_line) ? "=>" : "  ";
+        std::cout << mark << " " << i << " | " << (i - 1 < (int)lines.size() ? lines[i - 1] : "") << "\n";
+    }
+}
+
+void Interp::dbgHelp() {
+    std::cout << "命令:\n"
+              << "  c / continue   继续运行\n"
+              << "  n / next       执行下一语句（不进入函数）\n"
+              << "  s / step       单步（进入函数）\n"
+              << "  b <行号>       设置断点\n"
+              << "  del <行号>     删除断点\n"
+              << "  p <表达式>     求值表达式\n"
+              << "  vars           列出当前变量\n"
+              << "  bt             查看调用栈\n"
+              << "  list           查看附近源码\n"
+              << "  q / quit       退出\n";
 }
 
 void Interp::assign(int64_t nid, const std::shared_ptr<Expr>& idx,
@@ -1774,11 +1856,14 @@ Value Interp::call(const std::string& name, int64_t nid, const std::vector<std::
         else if (pdefault) local->set(pname, eval(pdefault, closure));
         else throw VesnaError(name + " 缺少参数 " + internName(pname));
     }
+    if (dbg) frames.emplace_back(fn->name, 0);
     try {
         for (auto& s : fn->body) exec(s, local);
     } catch (ReturnSignal& rs) {
+        if (dbg) frames.pop_back();
         return rs.value;
     }
+    if (dbg) frames.pop_back();
     return mkNone();
 }
 
@@ -1865,6 +1950,7 @@ void Interp::doImport(const std::string& name, const std::shared_ptr<Env>& env) 
         script_dir + "\\" + n + ".ves",
         script_dir + "\\lib\\" + n + ".ves",
         findVesnaHome() + "\\lib\\" + n + ".ves",
+        findVesnaHome() + "\\packages\\" + n + "\\" + n + ".ves",
     };
     for (const auto& p : paths) {
         if (fileExists(p)) {
@@ -1898,11 +1984,9 @@ static std::string parentDir(const std::string& path) {
 }
 
 static std::string pathAbs(const std::string& path) {
-    std::wstring wp = utf8ToWide(path);
-    wchar_t buf[MAX_PATH * 4];
-    DWORD n = GetFullPathNameW(wp.c_str(), MAX_PATH * 4, buf, nullptr);
-    if (n == 0) return path;
-    return wideToUtf8(std::wstring(buf, n));
+    std::error_code ec;
+    auto abs = std::filesystem::absolute(std::filesystem::u8path(path), ec);
+    return ec ? path : abs.u8string();
 }
 
 static std::vector<Value> splitStr(const std::string& s, const std::string& sep) {
@@ -2199,7 +2283,7 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
                       const std::shared_ptr<Env>& env) {
     auto ev = [&](size_t i) -> Value { return eval(args[i], env); };
     auto argc = [&]() -> size_t { return args.size(); };
-    static const std::unordered_map<std::string, int> g_bi = {{"up",1},{"down",2},{"len",3},{"sub",4},{"split",5},{"join",6},{"find",7},{"replace",8},{"append",9},{"pop",10},{"keys",11},{"values",12},{"type",13},{"args",14},{"fread",15},{"fwrite",16},{"fappend",17},{"fexists",18},{"exit",19},{"f",20},{"trim",21},{"startswith",22},{"endswith",23},{"lines",24},{"repeat",25},{"has_key",26},{"str",27},{"int",28},{"float",29},{"bool",30},{"char_at",31},{"sort",32},{"reverse",33},{"slice",34},{"map",35},{"filter",36},{"reduce",37},{"match",38},{"search",39},{"findall",40},{"gsub",41},{"ls",42},{"glob",43},{"stdin",44},{"ord",45},{"chr",46},{"is_digit",47},{"is_alpha",48},{"is_alnum",49},{"is_space",50},{"lstrip",51},{"rstrip",52},{"title",53},{"capitalize",54},{"count",55},{"rfind",56},{"min",57},{"max",58},{"sum",59},{"abs",60},{"round",61},{"pow",62},{"contains",63},{"mkdir",64},{"copy",65},{"rmdir",66},{"rename",67},{"getenv",68},{"setenv",69},{"cwd",70},{"chdir",71},{"regwrite",72},{"regdelete",73},{"shell",74},{"path_clean",75},{"regenv",146},{"sqrt",76},{"floor",77},{"ceil",78},{"exp",79},{"log",80},{"log10",81},{"sin",82},{"cos",83},{"tan",84},{"sign",85},{"clamp",86},{"rand",87},{"randint",88},{"choice",89},{"shuffle",145},{"hex",90},{"bin",91},{"oct",92},{"pad",93},{"lpad",94},{"rpad",95},{"format",96},{"hash",97},{"range",98},{"first",99},{"last",100},{"take",101},{"drop",102},{"set",103},{"flatten",104},{"zip",105},{"insert",106},{"remove",107},{"index_of",108},{"enumerate",109},{"concat",110},{"get",111},{"items",112},{"pop_key",113},{"is_str",114},{"is_int",115},{"is_float",116},{"is_bool",117},{"is_list",118},{"is_dict",119},{"is_none",120},{"is_group",121},{"now",122},{"date",123},{"sleep",124},{"ticks",125},{"platform",126},{"temp_dir",127},{"fremove",128},{"fmove",129},{"fsize",130},{"is_dir",131},{"is_file",132},{"mkdirs",133},{"base64_encode",134},{"base64_decode",135},{"url_encode",136},{"url_decode",137},{"each",138},{"all",139},{"any",140},{"find_first",141},{"sort_by",142},{"throw",143},{"assert",144}};
+    static const std::unordered_map<std::string, int> g_bi = {{"up",1},{"down",2},{"len",3},{"sub",4},{"split",5},{"join",6},{"find",7},{"replace",8},{"append",9},{"pop",10},{"keys",11},{"values",12},{"type",13},{"args",14},{"fread",15},{"fwrite",16},{"fappend",17},{"fexists",18},{"exit",19},{"f",20},{"trim",21},{"startswith",22},{"endswith",23},{"lines",24},{"repeat",25},{"has_key",26},{"str",27},{"int",28},{"float",29},{"bool",30},{"char_at",31},{"sort",32},{"reverse",33},{"slice",34},{"map",35},{"filter",36},{"reduce",37},{"match",38},{"search",39},{"findall",40},{"gsub",41},{"ls",42},{"glob",43},{"stdin",44},{"ord",45},{"chr",46},{"is_digit",47},{"is_alpha",48},{"is_alnum",49},{"is_space",50},{"lstrip",51},{"rstrip",52},{"title",53},{"capitalize",54},{"count",55},{"rfind",56},{"min",57},{"max",58},{"sum",59},{"abs",60},{"round",61},{"pow",62},{"contains",63},{"mkdir",64},{"copy",65},{"rmdir",66},{"rename",67},{"getenv",68},{"setenv",69},{"cwd",70},{"chdir",71},{"regwrite",72},{"regdelete",73},{"shell",74},{"path_clean",75},{"regenv",146},{"cpdir",147},{"sqrt",76},{"floor",77},{"ceil",78},{"exp",79},{"log",80},{"log10",81},{"sin",82},{"cos",83},{"tan",84},{"sign",85},{"clamp",86},{"rand",87},{"randint",88},{"choice",89},{"shuffle",145},{"hex",90},{"bin",91},{"oct",92},{"pad",93},{"lpad",94},{"rpad",95},{"format",96},{"hash",97},{"range",98},{"first",99},{"last",100},{"take",101},{"drop",102},{"set",103},{"flatten",104},{"zip",105},{"insert",106},{"remove",107},{"index_of",108},{"enumerate",109},{"concat",110},{"get",111},{"items",112},{"pop_key",113},{"is_str",114},{"is_int",115},{"is_float",116},{"is_bool",117},{"is_list",118},{"is_dict",119},{"is_none",120},{"is_group",121},{"now",122},{"date",123},{"sleep",124},{"ticks",125},{"platform",126},{"temp_dir",127},{"fremove",128},{"fmove",129},{"fsize",130},{"is_dir",131},{"is_file",132},{"mkdirs",133},{"base64_encode",134},{"base64_decode",135},{"url_encode",136},{"url_decode",137},{"each",138},{"all",139},{"any",140},{"find_first",141},{"sort_by",142},{"throw",143},{"assert",144}};
     auto it = g_bi.find(name);
     if (it == g_bi.end()) throw VesnaError("未知内置 -" + name);
     switch (it->second) {
@@ -2835,6 +2919,7 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
         Value k = ev(0), v = ev(1);
         if (k.t() != Value::T::STR || v.t() != Value::T::STR)
             throw VesnaError("-setenv 参数需要字符串");
+#ifdef _WIN32
         HKEY hk;
         if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Environment", 0, KEY_SET_VALUE, &hk) != ERROR_SUCCESS)
             throw VesnaError("-setenv 失败: 无法打开 Environment 注册表键");
@@ -2844,23 +2929,23 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
                                 (DWORD)((wv.size() + 1) * sizeof(wchar_t)));
         RegCloseKey(hk);
         if (r != ERROR_SUCCESS) throw VesnaError("-setenv 失败: 写入注册表错误");
-        _putenv_s(k.s().c_str(), v.s().c_str());
+#endif
+        if (setEnvProc(k.s(), v.s()) != 0)
+            throw VesnaError("-setenv 失败: 无法设置进程环境变量");
         return mkNone();
     }
-    case 70: {
-        wchar_t buf[MAX_PATH];
-        if (_wgetcwd(buf, MAX_PATH) == nullptr) return mkStr("");
-        return mkStr(wideToUtf8(buf));
-    }
+    case 70:
+        return mkStr(getCwd());
     case 71: {
         Value p = ev(0);
         if (p.t() != Value::T::STR) throw VesnaError("-chdir 需要字符串");
-        if (_wchdir(utf8ToWide(p.s()).c_str()) != 0)
+        if (chDir(p.s()) != 0)
             throw VesnaError("-chdir 失败: " + p.s());
         return mkNone();
     }
     case 72: {
         Value rootV = ev(0), pathV = ev(1), keyV = ev(2), valueV = ev(3);
+#ifdef _WIN32
         HKEY hroot = (rootV.s() == "HKLM") ? HKEY_LOCAL_MACHINE
                    : (rootV.s() == "HKCU") ? HKEY_CURRENT_USER : nullptr;
         if (!hroot) throw VesnaError("-regwrite 未知根: " + rootV.s());
@@ -2875,9 +2960,14 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
         RegCloseKey(hk);
         if (r != ERROR_SUCCESS) throw VesnaError("-regwrite 失败");
         return mkNone();
+#else
+        (void)rootV; (void)pathV; (void)keyV; (void)valueV;
+        throw VesnaError("-regwrite 当前平台不支持");
+#endif
     }
     case 73: {
         Value rootV = ev(0), pathV = ev(1);
+#ifdef _WIN32
         HKEY hroot = (rootV.s() == "HKLM") ? HKEY_LOCAL_MACHINE
                    : (rootV.s() == "HKCU") ? HKEY_CURRENT_USER : nullptr;
         if (!hroot) throw VesnaError("-regdelete 未知根: " + rootV.s());
@@ -2885,10 +2975,15 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
         if (r != ERROR_SUCCESS && r != ERROR_FILE_NOT_FOUND)
             throw VesnaError("-regdelete 失败");
         return mkNone();
+#else
+        (void)rootV; (void)pathV;
+        throw VesnaError("-regdelete 当前平台不支持");
+#endif
     }
-    case 146: {  // -regenv(name): 读用户环境变量（HKCU\Environment），无则 ""
+    case 146: {  // -regenv(name): 读用户环境变量（Windows: HKCU\Environment），无则 ""
         Value k = ev(0);
         if (k.t() != Value::T::STR) throw VesnaError("-regenv 需要字符串");
+#ifdef _WIN32
         HKEY hk = nullptr;
         if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Environment", 0,
                           KEY_QUERY_VALUE, &hk) != ERROR_SUCCESS)
@@ -2903,11 +2998,14 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
         size_t chars = size / sizeof(wchar_t);
         if (chars > 0 && buf[chars - 1] == L'\0') chars -= 1;
         return mkStr(wideToUtf8(std::wstring(buf, chars)));
+#else
+        return mkStr(std::getenv(k.s().c_str()) ? std::getenv(k.s().c_str()) : "");
+#endif
     }
     case 74: {
         Value cmd = ev(0);
         if (cmd.t() != Value::T::STR) throw VesnaError("-shell 需要字符串");
-        _wsystem(utf8ToWide(cmd.s()).c_str());
+        sysShell(cmd.s());
         return mkNone();
     }
     case 75: {
@@ -3287,14 +3385,27 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
         auto now = std::chrono::steady_clock::now();
         return mkInt((int64_t)std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count());
     }
-    case 126: return mkStr("windows");
+    case 126: {  // -platform
+#ifdef _WIN32
+        return mkStr("windows");
+#elif defined(__APPLE__)
+        return mkStr("mac");
+#else
+        return mkStr("linux");
+#endif
+    }
     case 127: {
+#ifdef _WIN32
         wchar_t buf[MAX_PATH];
         DWORD n = GetTempPathW(MAX_PATH, buf);
         if (n == 0) return mkStr("");
         std::wstring w = buf;
         while (!w.empty() && (w.back() == L'\\' || w.back() == L'/')) w.pop_back();
         return mkStr(wideToUtf8(w));
+#else
+        const char* t = std::getenv("TMPDIR");
+        return mkStr(t && *t ? t : "/tmp");
+#endif
     }
 
     // ---- 0.4 文件 ----
@@ -3463,6 +3574,29 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
         out.list()->items = std::move(items);
         return out;
     }
+    case 147: {  // -cpdir(src; dst): 递归复制目录（dst 不存在则创建）
+        Value s = ev(0), d = ev(1);
+        if (s.t() != Value::T::STR || d.t() != Value::T::STR)
+            throw VesnaError("-cpdir 需要两个路径字符串");
+        try {
+            std::filesystem::path sp = std::filesystem::u8path(s.s());
+            std::filesystem::path dp = std::filesystem::u8path(d.s());
+            std::error_code ec;
+            if (!std::filesystem::exists(sp, ec))
+                throw VesnaError("-cpdir 源目录不存在: " + s.s());
+            std::filesystem::create_directories(dp, ec);
+            if (ec) throw VesnaError("-cpdir 创建目标目录失败: " + d.s());
+            std::filesystem::copy(sp, dp,
+                std::filesystem::copy_options::recursive |
+                std::filesystem::copy_options::overwrite_existing, ec);
+            if (ec) throw VesnaError("-cpdir 复制失败: " + ec.message());
+        } catch (VesnaError&) {
+            throw;
+        } catch (const std::exception& e) {
+            throw VesnaError(std::string("-cpdir 异常: ") + e.what());
+        }
+        return mkNone();
+    }
 
     }
     throw VesnaError("未知内置 -" + name);
@@ -3474,19 +3608,15 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
 std::string findVesnaHome() {
     const char* env = getenv("VESNA_HOME");
     if (env && *env) return env;
-    wchar_t buf[MAX_PATH];
-    DWORD n = GetModuleFileNameW(nullptr, buf, MAX_PATH);
-    if (n == 0) return ".";
-    std::wstring exe(buf, n);
-    size_t pos = exe.find_last_of(L"/\\");
-    std::wstring exe_dir = (pos == std::wstring::npos) ? L"." : exe.substr(0, pos);
-    size_t pos2 = exe_dir.find_last_of(L"/\\");
-    std::wstring home = (pos2 == std::wstring::npos) ? exe_dir : exe_dir.substr(0, pos2);
-    return wideToUtf8(home);
+    std::string exe_dir = exeDir();
+    if (exe_dir.empty()) return ".";
+    size_t pos2 = exe_dir.find_last_of("/\\");
+    return (pos2 == std::string::npos) ? exe_dir : exe_dir.substr(0, pos2);
 }
 
 int runSource(const std::string& src, const std::vector<std::string>& argv,
-              const std::string& script_dir, const std::string& filename, bool catch_exit) {
+              const std::string& script_dir, const std::string& filename, bool catch_exit,
+              bool dbg, const std::string& dbg_file) {
     Parser parser(preprocess(src), filename);
     auto program = parser.parse();
     if (!parser.errors.empty()) {
@@ -3494,6 +3624,9 @@ int runSource(const std::string& src, const std::vector<std::string>& argv,
         throw VesnaError(msg, line);
     }
     Interp interp(argv, script_dir);
+    interp.dbg = dbg;
+    interp.dbg_file = dbg_file.empty() ? filename : dbg_file;
+    if (dbg) interp.dbg_mode = 1;   // --debug 启动即暂停在第一语句
     try {
         interp.run(program);
     } catch (ExitSignal& e) {
@@ -3510,6 +3643,11 @@ int runSource(const std::string& src, const std::vector<std::string>& argv,
 int runFile(const std::string& path, const std::vector<std::string>& argv) {
     std::string src = readFileUtf8(path);
     return runSource(src, argv, parentDir(path), path, true);
+}
+
+int runFileDbg(const std::string& path, const std::vector<std::string>& argv) {
+    std::string src = readFileUtf8(path);
+    return runSource(src, argv, parentDir(path), path, true, true, path);
 }
 
 void repl() {

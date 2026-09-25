@@ -202,6 +202,7 @@ d = {"a": '1'; "b": '2'},
 | `#shell(cmd)` | run shell command |
 | `#path_clean(p)` | normalize path |
 | `#cwd()` | current working directory |
+| `#cpdir(src; dst)` | recursively copy a directory |
 
 ```text
 args = #args(),

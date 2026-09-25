@@ -5,6 +5,11 @@
 ## 1.0.0
 
 ### 新增
+- **包管理器（vpm）**：`vesna --pkg` — init / install（`目录` | `zip` | `owner:repo`）/ remove / list / search / registry；包位于 `<VESNA_HOME>\packages\<名称>\<名称>.ves`，通过 `import <名称>` 导入
+- **调试器**：`vesna --debug` — 断点（`b` / `del`）、继续 / 下一行 / 步入、表达式求值（`p`）、变量（`vars`）、调用栈回溯（`bt`）、源码列表（`list`）；默认停在第一行
+- 新内置 `#cpdir(src; dst)`：递归复制目录
+- **跨平台**：新增 `src/cpp/platform.h` 抽象层（UTF-8/16 转换、shell、cwd、chdir、环境变量、临时目录）；CMake 构建支持 Windows / Linux / macOS；注册表内置（`-regwrite` / `-regdelete` / `-regenv`）在非 Windows 平台报"不支持"；`#platform` 返回 `windows` / `linux` / `mac`
+- examples golden 基准改为由 C++ 实现生成（权威；Python 参考实现已冻结，仅用于回归）
 - **通用语言扩充**：新增 70 个内置函数
   - 数学：`#sqrt` `#floor` `#ceil` `#exp` `#log` `#log10` `#sin` `#cos` `#tan` `#sign` `#clamp` `#rand` `#randint` `#choice` `#shuffle`
   - 进制：`#hex` `#bin` `#oct`

@@ -59,6 +59,26 @@ vesna wc.ves sample.txt
 vesna grep.ves "ERROR" log.txt
 ```
 
+### 4. 调试脚本
+
+```bat
+vesna --debug hello.ves
+```
+
+交互命令：`c`/`continue` 继续，`n`/`next` 下一行，`s`/`step` 步入函数，`q`/`quit` 退出，`b <行>` 设断点，`del <行>` 删断点，`p <表达式>` 求值，`vars` 列变量，`bt` 调用栈回溯，`list` 显示源码，`help` 帮助。
+
+### 5. 包管理器（vpm）
+
+```bat
+vesna --pkg init                 # 生成 vesna-pkg.json
+vesna --pkg install <目录|zip|owner:repo>
+vesna --pkg remove <名称>
+vesna --pkg list
+vesna --pkg search <关键词>
+```
+
+安装的包通过 `import <名称>` 从 `<VESNA_HOME>\packages\<名称>\<名称>.ves` 导入。
+
 ---
 
 ## Hello, World
@@ -150,20 +170,30 @@ C++ 版优化（详见 [CHANGELOG.md](CHANGELOG.md)）：正则缓存、字面�
 
 ## 从源码构建
 
-需要 [MinGW-w64](https://www.mingw-w64.org/)（g++ 11+，Windows 10+）：
+### Windows（MinGW-w64，g++ 11+，Windows 10+）
 
 ```bat
 cd src\cpp
 g++ -std=c++17 -O3 -flto -static -Wall -Wextra vesna.cpp main.cpp -o vesna.exe -ladvapi32
 ```
 
-回归测试（输出须与 Python 参考实现逐行一致）：
+### 跨平台（CMake，Windows / Linux / macOS）
+
+```bat
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+```
+
+源码树可移植：`src/cpp/platform.h` 抽象了 UTF-8/UTF-16 转换、shell、cwd、chdir、环境变量与临时目录。注册表内置（`-regwrite` / `-regdelete` / `-regenv`）在非 Windows 平台上报"当前平台不支持"。
+
+### 回归测试
+
+输出须与 `src/cpp/tests/golden/` 下的 golden 基准逐行一致（再生成命令见其 README）：
 
 ```bat
 vesna.exe tests\regression.ves
 vesna.exe tests\fs_test.ves
-git clone https://github.com/youakasakura-YAS/vesna-py   # 参考实现
-python vesna-py\src\vesna.py tests\regression.ves        # 输出必须一致
+vesna.exe tests\smoke04.ves
 ```
 
 ---
