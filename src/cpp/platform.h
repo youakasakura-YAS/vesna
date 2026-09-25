@@ -14,6 +14,10 @@
 
 namespace vesna {
 
+// UUID v4 随机源（advapi32 SystemFunction036）
+extern "C" BOOLEAN NTAPI SystemFunction036(PVOID, ULONG);
+#define RtlGenRandom SystemFunction036
+
 inline std::wstring utf8ToWide(const std::string& s) {
     if (s.empty()) return L"";
     int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
@@ -129,6 +133,10 @@ inline int tcpPing(const std::string& host, int port) {
 #include <dlfcn.h>
 
 namespace vesna {
+
+// UUID v4 随机源（advapi32 SystemFunction036）
+extern "C" BOOLEAN NTAPI SystemFunction036(PVOID, ULONG);
+#define RtlGenRandom SystemFunction036
 
 inline std::wstring utf8ToWide(const std::string& s) {
     std::wstring out;

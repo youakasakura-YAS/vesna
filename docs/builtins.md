@@ -341,10 +341,14 @@ Added in 1.0.0. `#rand`, `#randint`, `#choice`, `#shuffle`, `#now`, `#date`, `#s
 |---|---|
 | `#now()` | unix timestamp (int) |
 | `#date(fmt)` | formatted local time (default `%Y-%m-%d %H:%M:%S`) |
+| `#date_format(ts; fmt)` | format a timestamp (default `%Y-%m-%d %H:%M:%S`) |
+| `#parse_time(s; fmt)` | parse a formatted string to timestamp (`%Y %m %d %H %M %S` supported) |
 | `#sleep(ms)` | sleep milliseconds |
 | `#ticks()` | monotonic milliseconds since start |
-| `#platform()` | `"windows"` |
+| `#platform()` | `"windows"` / `"linux"` / `"mac"` |
+| `#arch()` | `"x64"` / `"arm64"` / `"x86"` / `"unknown"` |
 | `#temp_dir()` | system temp directory |
+| `#uuid()` | random UUID v4 string (36 chars) |
 
 ### Files
 
@@ -353,6 +357,8 @@ Added in 1.0.0. `#rand`, `#randint`, `#choice`, `#shuffle`, `#now`, `#date`, `#s
 | `#fremove(path)` | delete file (missing is fine) |
 | `#fmove(src; dst)` | move file |
 | `#fsize(path)` | file size in bytes |
+| `#file_time(path)` | file last-modified time (unix seconds) |
+| `#truncate(path; size)` | truncate / extend a file to `size` bytes |
 | `#is_dir(path)` / `#is_file(path)` | path type checks |
 | `#mkdirs(path)` | create directories recursively |
 
@@ -400,6 +406,7 @@ Notes: each thread runs on an independent copy of global state (functions are sh
 | `#http_get(url)` | GET the URL, return the response body as string |
 | `#http_post(url; body)` | POST form body, return the response body as string |
 | `#tcp_ping(host; port)` | `0` if a TCP connection succeeds, `1` if refused/timeout, `-1` on error |
+| `#http_server(port; "handler")` | blocking HTTP server; per request calls `handler(req)` where `req` is `{method; path; headers; body}`; handler returns a string (200) or `{code; body; type}` |
 
 ### Binary
 

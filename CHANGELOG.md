@@ -2,7 +2,18 @@
 
 [English](CHANGELOG.md) | [中文](CHANGELOG.zh-CN.md)
 
+## 1.6.0
+
+### Added
+- **`#http_server(port; "handler")`** — a blocking HTTP server (native sockets, no dependencies). Each request builds `req = {method; path; headers; body}` and calls the handler by name; the handler returns a string (200) or `{code; body; type}` for full control
+- **Time builtins**: `#date_format(ts; fmt)` formats any unix timestamp (default `%Y-%m-%d %H:%M:%S`); `#parse_time(s; fmt)` parses a formatted string back to a timestamp (`%Y %m %d %H %M %S` subset, separator-tolerant)
+- **`#uuid()`** — random UUID v4 (36 chars, RFC-4122 variant/version bits)
+- **File builtins**: `#file_time(path)` returns the last-modified unix time; `#truncate(path; size)` truncates or extends a file to the given byte size
+- **`#arch()`** — `"x64"` / `"arm64"` / `"x86"` / `"unknown"` (runtime platform detection is `#platform()` since 0.4)
+- Syntax highlighting extended to all 183 builtins
+
 ## 1.5.0
+
 
 ### Added
 - **vpm publish**: `vesna --pkg publish` — one command to publish a package: validates `vesna-pkg.json`, packs `entry` + metadata into `<name>-<version>.zip` (PowerShell `Compress-Archive` on Windows / `zip` elsewhere), computes the zip `sha256`, writes `registry-entry.json`, and updates a local `registry.json` if present

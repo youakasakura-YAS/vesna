@@ -18,7 +18,7 @@
 - **对标**：`awk`、`sed`、`jq`、`perl`
 - **语言规范**：语义权威在 [Python 参考实现](https://github.com/youakasakura-YAS/vesna-py)（独立仓库）
 - **VSCode 插件**：[vesna-vscode-extension](https://github.com/youakasakura-YAS/vesna-vscode-extension)（语法高亮 + LSP）
-- **性能**：处理 10 万行日志约 240ms
+- **性能**：处理 10 万行日志约 240ms；183 个内置，含 HTTP 服务（`#http_server`）
 - **语法**：缩进用 `-`，内置函数用 `#` 前缀，语句以 `,` 结尾
 
 ---

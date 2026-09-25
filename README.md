@@ -8,7 +8,7 @@
 
 [English](README.md) | [中文](README.zh-CN.md)
 
-![version](https://img.shields.io/badge/version-1.5.0-blue)
+![version](https://img.shields.io/badge/version-1.6.0-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![platform](https://img.shields.io/badge/platform-Windows-x64-lightgrey)
 
@@ -18,7 +18,7 @@
 - **Alternatives**: `awk`, `sed`, `jq`, `perl`
 - **Language spec**: authoritative semantics live in the [Python reference implementation](https://github.com/youakasakura-YAS/vesna-py)
 - **VSCode extension**: [vesna-vscode-extension](https://github.com/youakasakura-YAS/vesna-vscode-extension) (syntax highlighting + LSP)
-- **Performance**: processes 100k log lines in ~240ms
+- **Performance**: processes 100k log lines in ~240ms; 183 builtins incl. an HTTP server (`#http_server`)
 - **Syntax**: indentation uses `-`, builtins use `#` prefix, statements end with `,`
 
 ---
@@ -27,7 +27,7 @@
 
 ### 1. Download
 
-Grab `vesna-1.5.0-windows-x64.zip` from [Releases](../../releases) and extract it anywhere.
+Grab `vesna-1.6.0-windows-x64.zip` from [Releases](../../releases) and extract it anywhere.
 
 | File | Description |
 |---|---|

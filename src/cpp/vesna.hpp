@@ -106,7 +106,7 @@ std::string typeName(const Value& v);
 struct Expr {
     enum class K {
         NUM, STR, BOOL, NONE, VAR, INTERP, NEG, NOT, AND, OR, BIN,
-        GROUP, LIST, DICT, INDEX, BUILTIN, INTO, CALL
+        GROUP, LIST, DICT, INDEX, BUILTIN, INTO, CALL, VAL
     } k;
     bool is_float = false;
     int64_t inum = 0;
@@ -118,6 +118,7 @@ struct Expr {
     std::shared_ptr<Expr> a, b;      // 一元/二元/索引操作数
     std::vector<std::shared_ptr<Expr>> args;              // BUILTIN/CALL/GROUP/LIST 元素
     std::vector<std::pair<std::shared_ptr<Expr>, std::shared_ptr<Expr>>> pairs;  // DICT
+    Value val;                 // VAL：已求值的值常量（http_server 传字典给 handler 等）
 };
 
 struct Stmt {

@@ -2,7 +2,18 @@
 
 [English](CHANGELOG.md) | [中文](CHANGELOG.zh-CN.md)
 
+## 1.6.0
+
+### 新增
+- **`#http_server(port; "handler")`** —— 阻塞式 HTTP 服务（原生 socket，零依赖）。每个请求构造 `req = {method; path; headers; body}` 并按名调用 handler；handler 返回字符串（200）或 `{code; body; type}` 完全控制
+- **时间内置**：`#date_format(ts; fmt)` 格式化任意 unix 时间戳（默认 `%Y-%m-%d %H:%M:%S`）；`#parse_time(s; fmt)` 把格式化字符串解析回时间戳（`%Y %m %d %H %M %S` 子集，容忍分隔符）
+- **`#uuid()`** —— 随机 UUID v4（36 字符，RFC-4122 版本/变体位）
+- **文件内置**：`#file_time(path)` 返回文件最后修改时间（unix 秒）；`#truncate(path; size)` 将文件截断 / 扩展为指定字节数
+- **`#arch()`** —— `"x64"` / `"arm64"` / `"x86"` / `"unknown"`（运行时平台名自 0.4 起为 `#platform()`）
+- 语法高亮扩展至全部 183 个内置
+
 ## 1.5.0
+
 
 ### 新增
 - **vpm publish**：`vesna --pkg publish` —— 一键发布包：校验 `vesna-pkg.json`、将 `entry` + 元数据打包为 `<name>-<version>.zip`（Windows 用 PowerShell `Compress-Archive`，其他平台用 `zip`）、计算 zip `sha256`、写入 `registry-entry.json`，若存在本地 `registry.json` 则自动追加条目

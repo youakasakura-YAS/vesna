@@ -33,7 +33,7 @@ namespace vesna {
 
 static std::string parentDir(const std::string& path);
 static std::string strFloat(double f);
-const std::string VERSION = "1.5.0";
+const std::string VERSION = "1.6.0";
 
 
 // ============================================================
@@ -1662,6 +1662,8 @@ Value Interp::eval(const std::shared_ptr<Expr>& e, const std::shared_ptr<Env>& e
             return mkBool(e->bval);
         case Expr::K::NONE:
             return mkNone();
+        case Expr::K::VAL:
+            return e->val;
         case Expr::K::VAR: {
             const Value* v = env->getRef(e->nid);
             return v ? *v : mkStr(e->str);
@@ -2547,7 +2549,8 @@ static std::pair<int, std::string> procRun(const std::string& cmd) {
 const std::vector<std::pair<std::string, int>> g_builtinNames = {
     {"up",1},{"down",2},{"len",3},{"sub",4},{"split",5},{"join",6},{"find",7},{"replace",8},{"append",9},{"pop",10},{"keys",11},{"values",12},{"type",13},{"args",14},{"fread",15},{"fwrite",16},{"fappend",17},{"fexists",18},{"exit",19},{"f",20},{"trim",21},{"startswith",22},{"endswith",23},{"lines",24},{"repeat",25},{"has_key",26},{"str",27},{"int",28},{"float",29},{"bool",30},{"char_at",31},{"sort",32},{"reverse",33},{"slice",34},{"map",35},{"filter",36},{"reduce",37},{"match",38},{"search",39},{"findall",40},{"gsub",41},{"ls",42},{"glob",43},{"stdin",44},{"ord",45},{"chr",46},{"is_digit",47},{"is_alpha",48},{"is_alnum",49},{"is_space",50},{"lstrip",51},{"rstrip",52},{"title",53},{"capitalize",54},{"count",55},{"rfind",56},{"min",57},{"max",58},{"sum",59},{"abs",60},{"round",61},{"pow",62},{"contains",63},{"mkdir",64},{"copy",65},{"rmdir",66},{"rename",67},{"getenv",68},{"setenv",69},{"cwd",70},{"chdir",71},{"regwrite",72},{"regdelete",73},{"shell",74},{"path_clean",75},{"regenv",146},{"cpdir",147},{"sqrt",76},{"floor",77},{"ceil",78},{"exp",79},{"log",80},{"log10",81},{"sin",82},{"cos",83},{"tan",84},{"sign",85},{"clamp",86},{"rand",87},{"randint",88},{"choice",89},{"shuffle",145},{"hex",90},{"bin",91},{"oct",92},{"pad",93},{"lpad",94},{"rpad",95},{"format",96},{"hash",97},{"range",98},{"first",99},{"last",100},{"take",101},{"drop",102},{"set",103},{"flatten",104},{"zip",105},{"insert",106},{"remove",107},{"index_of",108},{"enumerate",109},{"concat",110},{"get",111},{"items",112},{"pop_key",113},{"is_str",114},{"is_int",115},{"is_float",116},{"is_bool",117},{"is_list",118},{"is_dict",119},{"is_none",120},{"is_group",121},{"now",122},{"date",123},{"sleep",124},{"ticks",125},{"platform",126},{"temp_dir",127},{"fremove",128},{"fmove",129},{"fsize",130},{"is_dir",131},{"is_file",132},{"mkdirs",133},{"base64_encode",134},{"base64_decode",135},{"url_encode",136},{"url_decode",137},{"each",138},{"all",139},{"any",140},{"find_first",141},{"sort_by",142},{"throw",143},{"assert",144},{"thread",148},{"thread_join",149},{"thread_count",150},{"lock",151},{"unlock",152},{"http_get",153},{"http_post",154},{"tcp_ping",155},{"bin_read",156},{"bin_write",157},{"bin_hex",158},{"bin_unhex",159},{"bin_base64_encode",160},{"bin_base64_decode",161},{"json_encode",162},{"json_decode",163},{"re_groups",164},{"sha256",165},{"aes_encrypt",166},{"aes_decrypt",167},{"proc_run",168},{"ffi_call",169},
     {"csv_parse",170},{"csv_build",171},{"ini_read",172},{"ini_write",173},
-    {"xml_parse",174},{"ffi_call_s",175},{"call",176}
+    {"xml_parse",174},{"ffi_call_s",175},{"call",176},
+    {"date_format",177},{"parse_time",178},{"uuid",179},{"http_server",180},{"file_time",181},{"truncate",182},{"arch",183}
 };
 
 
@@ -4480,6 +4483,234 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
             throw VesnaError("-call 第一个参数需要函数名字符串");
         std::vector<std::shared_ptr<Expr>> rest(args.begin() + 1, args.end());
         return call(fnV.s(), internId(fnV.s()), rest, env);
+    }
+    case 177: {  // -date_format(ts; fmt) 时间戳 -> 格式化字符串
+        Value tV = ev(0);
+        if (tV.t() != Value::T::INT) throw VesnaError("-date_format 需要整数时间戳");
+        std::string fmt = "%Y-%m-%d %H:%M:%S";
+        if (argc() > 1) {
+            Value f = ev(1);
+            if (f.t() != Value::T::STR) throw VesnaError("-date_format 格式需要字符串");
+            fmt = f.s();
+        }
+        std::time_t t = (std::time_t)tV.i();
+        std::tm tm = {};
+        localtime_s(&tm, &t);
+        char buf[256];
+        std::strftime(buf, sizeof(buf), fmt.c_str(), &tm);
+        return mkStr(buf);
+    }
+    case 178: {  // -parse_time(s; fmt) 格式化字符串 -> 时间戳（strptime 子集 %Y%m%d%H%M%S）
+        Value sV = ev(0), fV = ev(1);
+        if (sV.t() != Value::T::STR || fV.t() != Value::T::STR)
+            throw VesnaError("-parse_time 需要字符串与格式");
+        const std::string& s = sV.s();
+        const std::string& fmt = fV.s();
+        std::tm tm = {};
+        tm.tm_isdst = -1;
+        size_t si = 0, fi = 0;
+        while (fi < fmt.size() && si < s.size()) {
+            if (fmt[fi] == '%') {
+                ++fi;
+                if (fi >= fmt.size()) break;
+                char c = fmt[fi];
+                int val = 0;
+                bool any = false;
+                while (si < s.size() && !isdigit((unsigned char)s[si])) ++si;
+                while (si < s.size() && isdigit((unsigned char)s[si])) {
+                    val = val * 10 + (s[si] - '0');
+                    ++si;
+                    any = true;
+                }
+                if (!any) break;
+                switch (c) {
+                    case 'Y': tm.tm_year = val - 1900; break;
+                    case 'm': tm.tm_mon = val - 1; break;
+                    case 'd': tm.tm_mday = val; break;
+                    case 'H': tm.tm_hour = val; break;
+                    case 'M': tm.tm_min = val; break;
+                    case 'S': tm.tm_sec = val; break;
+                    default: break;
+                }
+            } else {
+                ++fi;
+            }
+        }
+        std::time_t t = std::mktime(&tm);
+        if (t == (std::time_t)-1) throw VesnaError("-parse_time 解析失败");
+        return mkInt((int64_t)t);
+    }
+    case 179: {  // -uuid() UUID v4
+        unsigned char b[16] = {0};
+#ifdef _WIN32
+        RtlGenRandom(b, 16);
+#else
+        FILE* f = fopen("/dev/urandom", "rb");
+        if (f) { (void)fread(b, 1, 16, f); fclose(f); }
+        else { for (int i = 0; i < 16; ++i) b[i] = (unsigned char)(std::rand() & 255); }
+#endif
+        b[6] = (unsigned char)((b[6] & 0x0f) | 0x40);   // version 4
+        b[8] = (unsigned char)((b[8] & 0x3f) | 0x80);   // variant 10xx
+        static const char* hexd = "0123456789abcdef";
+        std::string out;
+        for (int i = 0; i < 16; ++i) {
+            if (i == 4 || i == 6 || i == 8 || i == 10) out += '-';
+            out += hexd[b[i] >> 4];
+            out += hexd[b[i] & 15];
+        }
+        return mkStr(out);
+    }
+    case 180: {  // -http_server(port; handler) 阻塞式 HTTP 服务（单线程顺序处理）
+        Value pV = ev(0), hV = ev(1);
+        if (pV.t() != Value::T::INT || hV.t() != Value::T::STR)
+            throw VesnaError("-http_server 需要端口整数与处理器函数名");
+        int port = (int)pV.i();
+        std::string handler = hV.s();
+#ifdef _WIN32
+        WSADATA wsa;
+        if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) throw VesnaError("-http_server WSAStartup 失败");
+        SOCKET srv = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        if (srv == INVALID_SOCKET) { WSACleanup(); throw VesnaError("-http_server 无法创建套接字"); }
+        int opt = 1;
+        setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt));
+        struct sockaddr_in addr;
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons((u_short)port);
+        addr.sin_addr.s_addr = INADDR_ANY;
+        if (bind(srv, (struct sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) {
+            closesocket(srv); WSACleanup();
+            throw VesnaError("-http_server 绑定失败: 端口 " + std::to_string(port) + " 被占用?");
+        }
+        if (listen(srv, 8) == SOCKET_ERROR) {
+            closesocket(srv); WSACleanup(); throw VesnaError("-http_server listen 失败");
+        }
+        for (;;) {
+            SOCKET cli = accept(srv, nullptr, nullptr);
+            if (cli == INVALID_SOCKET) continue;
+            std::string raw;
+            char buf[4096];
+            bool headerDone = false;
+            while (!headerDone) {
+                int n = recv(cli, buf, sizeof(buf), 0);
+                if (n <= 0) break;
+                raw.append(buf, (size_t)n);
+                if (raw.find("\r\n\r\n") != std::string::npos) headerDone = true;
+            }
+            std::string method, path;
+            size_t sp1 = raw.find(' ');
+            size_t sp2 = (sp1 == std::string::npos) ? std::string::npos : raw.find(' ', sp1 + 1);
+            if (sp1 != std::string::npos && sp2 != std::string::npos) {
+                method = raw.substr(0, sp1);
+                path = raw.substr(sp1 + 1, sp2 - sp1 - 1);
+            }
+            long clen = 0;
+            {
+                std::string lower = raw;
+                for (auto& ch : lower) ch = (char)tolower((unsigned char)ch);
+                size_t pos = lower.find("content-length:");
+                if (pos != std::string::npos) {
+                    pos += 15;
+                    while (pos < lower.size() && (lower[pos] == ' ' || lower[pos] == '\t')) ++pos;
+                    clen = atol(lower.c_str() + pos);
+                }
+            }
+            std::string body;
+            {
+                size_t hb = raw.find("\r\n\r\n");
+                if (hb != std::string::npos) {
+                    size_t have = raw.size() - (hb + 4);
+                    if (have < (size_t)clen) {
+                        size_t need = (size_t)clen - have;
+                        while (need > 0) {
+                            int n = recv(cli, buf, (int)std::min<size_t>(need, sizeof(buf)), 0);
+                            if (n <= 0) break;
+                            raw.append(buf, (size_t)n);
+                            need -= (size_t)n;
+                        }
+                    }
+                    body = raw.substr(hb + 4, (size_t)clen);
+                }
+            }
+            Value req = mkDict();
+            dictSet(*req.dict(), mkStr("method"), mkStr(method));
+            dictSet(*req.dict(), mkStr("path"), mkStr(path));
+            size_t hb2 = raw.find("\r\n\r\n");
+            dictSet(*req.dict(), mkStr("headers"),
+                    mkStr(hb2 == std::string::npos ? raw : raw.substr(0, hb2)));
+            dictSet(*req.dict(), mkStr("body"), mkStr(body));
+            int code = 200;
+            std::string respBody = "OK";
+            std::string ctype = "text/plain; charset=utf-8";
+            try {
+                std::vector<std::shared_ptr<Expr>> callArgs;
+                auto reqE = std::make_shared<Expr>();
+                reqE->k = Expr::K::VAL;
+                reqE->val = req;
+                callArgs.push_back(reqE);
+                Value r = call(handler, internId(handler), callArgs, env);
+                if (r.t() == Value::T::STR) {
+                    respBody = r.s();
+                } else if (r.t() == Value::T::DICT) {
+                    for (auto& [k, v] : r.dict()->pairs) {
+                        if (k.t() == Value::T::STR && k.s() == "code" && v.t() == Value::T::INT) code = (int)v.i();
+                        else if (k.t() == Value::T::STR && k.s() == "body" && v.t() == Value::T::STR) respBody = v.s();
+                        else if (k.t() == Value::T::STR && k.s() == "type" && v.t() == Value::T::STR) ctype = v.s();
+                    }
+                } else throw VesnaError("-http_server 处理器必须返回字符串或字典");
+            } catch (VesnaError& e) {
+                code = 500;
+                respBody = e.str();
+                ctype = "text/plain; charset=utf-8";
+            }
+            std::string reason = code == 200 ? "OK" : (code == 404 ? "Not Found"
+                                : (code == 500 ? "Internal Server Error" : "Error"));
+            std::string resp = "HTTP/1.1 " + std::to_string(code) + " " + reason + "\r\n"
+                + "Content-Type: " + ctype + "\r\n"
+                + "Content-Length: " + std::to_string(respBody.size()) + "\r\n"
+                + "Connection: close\r\n\r\n" + respBody;
+            send(cli, resp.data(), (int)resp.size(), 0);
+            closesocket(cli);
+        }
+#endif
+        return mkNone();
+    }
+    case 181: {  // -file_time(path) 文件修改时间戳（秒）
+        Value p = ev(0);
+        if (p.t() != Value::T::STR) throw VesnaError("-file_time 需要路径字符串");
+        std::error_code ec;
+        auto ft = std::filesystem::last_write_time(std::filesystem::u8path(p.s()), ec);
+        if (ec) throw VesnaError("-file_time 无法访问: " + p.s());
+        auto sys = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+            ft - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now());
+        return mkInt((int64_t)std::chrono::duration_cast<std::chrono::seconds>(sys.time_since_epoch()).count());
+    }
+    case 182: {  // -truncate(path; size) 截断/扩展到指定字节数
+        Value p = ev(0), sz = ev(1);
+        if (p.t() != Value::T::STR || sz.t() != Value::T::INT)
+            throw VesnaError("-truncate 需要路径字符串与整数大小");
+        if (sz.i() < 0) throw VesnaError("-truncate 大小不能为负");
+        if (sz.i() == 0) {
+            std::ofstream f(std::filesystem::u8path(p.s()), std::ios::binary | std::ios::trunc);
+            if (!f) throw VesnaError("-truncate 无法打开: " + p.s());
+            return mkNone();
+        }
+        std::ofstream f(std::filesystem::u8path(p.s()), std::ios::binary | std::ios::trunc);
+        if (!f) throw VesnaError("-truncate 无法打开: " + p.s());
+        f.seekp((std::streamoff)(sz.i() - 1));
+        f.put('\0');
+        f.close();
+        return mkNone();
+    }
+    case 183: {  // -arch() 架构
+#if defined(_M_X64) || defined(__x86_64__)
+        return mkStr("x64");
+#elif defined(_M_ARM64) || defined(__aarch64__)
+        return mkStr("arm64");
+#elif defined(_M_IX86) || defined(__i386__)
+        return mkStr("x86");
+#else
+        return mkStr("unknown");
+#endif
     }
 
 

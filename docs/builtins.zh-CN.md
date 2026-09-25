@@ -341,10 +341,14 @@ print(#f"name=(name), age=(age)"),
 |---|---|
 | `#now()` | Unix 时间戳（int） |
 | `#date(fmt)` | 本地时间格式化（默认 `%Y-%m-%d %H:%M:%S`） |
+| `#date_format(ts; fmt)` | 格式化任意时间戳（默认 `%Y-%m-%d %H:%M:%S`） |
+| `#parse_time(s; fmt)` | 把格式化字符串解析为时间戳（支持 `%Y %m %d %H %M %S`） |
 | `#sleep(ms)` | 睡眠毫秒 |
 | `#ticks()` | 自启动起单调毫秒数 |
-| `#platform()` | `"windows"` |
+| `#platform()` | `"windows"` / `"linux"` / `"mac"` |
+| `#arch()` | `"x64"` / `"arm64"` / `"x86"` / `"unknown"` |
 | `#temp_dir()` | 系统临时目录 |
+| `#uuid()` | 随机 UUID v4 字符串（36 字符） |
 
 ### 文件
 
@@ -353,6 +357,8 @@ print(#f"name=(name), age=(age)"),
 | `#fremove(path)` | 删除文件（不存在不报错） |
 | `#fmove(src; dst)` | 移动文件 |
 | `#fsize(path)` | 文件字节数 |
+| `#file_time(path)` | 文件最后修改时间（unix 秒） |
+| `#truncate(path; size)` | 将文件截断 / 扩展为 `size` 字节 |
 | `#is_dir(path)` / `#is_file(path)` | 路径类型判断 |
 | `#mkdirs(path)` | 递归创建目录 |
 
@@ -400,6 +406,7 @@ print(#f"name=(name), age=(age)"),
 | `#http_get(url)` | GET 请求，返回响应体字符串 |
 | `#http_post(url; body)` | POST 表单请求，返回响应体字符串 |
 | `#tcp_ping(host; port)` | TCP 连通返回 `0`，拒绝/超时返回 `1`，错误返回 `-1` |
+| `#http_server(port; "handler")` | 阻塞式 HTTP 服务；每请求调用 `handler(req)`，`req` 为 `{method; path; headers; body}`；handler 返回字符串（200）或 `{code; body; type}` |
 
 ### 二进制
 
