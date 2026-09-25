@@ -40,7 +40,7 @@
 -url_encode = a+b%26c
 -url_decode = a b&c
 -platform = windows
--temp_dir = C:\Users\Administrator\AppData\Local\Temp
+-temp_dir ok = true
 -first none = none
 -each = ['1';'2';'3']
 -all = true -any = true
