@@ -71,13 +71,14 @@ vesna --debug hello.ves
 
 ```bat
 vesna --pkg init                 # 生成 vesna-pkg.json
-vesna --pkg install <目录|zip|owner:repo>
+vesna --pkg registry             # 缓存索引（默认：Vesna 包花园）
+vesna --pkg install <目录|zip|owner:repo|包名>
 vesna --pkg remove <名称>
 vesna --pkg list
 vesna --pkg search <关键词>
 ```
 
-安装的包通过 `import <名称>` 从 `<VESNA_HOME>\packages\<名称>\<名称>.ves` 导入。
+`install <包名>` 会在缓存的 registry 索引中查找并下载包 zip。默认使用官方 registry——[Vesna 包花园](https://youakasakura-YAS.github.io/vesna-pkg/)。安装的包通过 `import <名称>` 从 `<VESNA_HOME>\packages\<名称>\<名称>.ves` 导入。
 
 ---
 

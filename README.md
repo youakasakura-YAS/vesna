@@ -71,13 +71,14 @@ Interactive commands: `c`/`continue` continue, `n`/`next` next line, `s`/`step` 
 
 ```bat
 vesna --pkg init                 # scaffold vesna-pkg.json
-vesna --pkg install <dir|zip|owner:repo>
+vesna --pkg registry             # cache index (default: Vesna Package Garden)
+vesna --pkg install <dir|zip|owner:repo|name>
 vesna --pkg remove <name>
 vesna --pkg list
 vesna --pkg search <keyword>
 ```
 
-Installed packages are imported with `import <name>` from `<VESNA_HOME>\packages\<name>\<name>.ves`.
+`install <name>` looks the name up in the cached registry index and downloads the package zip. The official registry — [Vesna Package Garden](https://youakasakura-YAS.github.io/vesna-pkg/) — is used by default. Installed packages are imported with `import <name>` from `<VESNA_HOME>\packages\<name>\<name>.ves`.
 
 ---
 

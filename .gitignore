@@ -58,3 +58,5 @@ bin/vesna.exe
 
 # 本地备份快照（保留最近 3 次）
 _backup/
+# vpm 运行时缓存的 registry 索引
+registry.json

@@ -5,7 +5,7 @@
 ## 1.0.0
 
 ### Added
-- **Package manager (vpm)**: `vesna --pkg` — init / install (`dir` | `zip` | `owner:repo`) / remove / list / search / registry; packages live in `<VESNA_HOME>\packages\<name>\<name>.ves` and are imported via `import <name>`
+- **Package manager (vpm)**: `vesna --pkg` — init / install (`dir` | `zip` | `owner:repo` | registry package name) / remove / list / search / registry; packages live in `<VESNA_HOME>\packages\<name>\<name>.ves` and are imported via `import <name>`; `install <name>` resolves the package from the cached registry index; default registry is the [Vesna Package Garden](https://youakasakura-YAS.github.io/vesna-pkg/)
 - **Debugger**: `vesna --debug` — breakpoints (`b` / `del`), continue / next / step, expression eval (`p`), variables (`vars`), backtrace (`bt`), source listing (`list`); pauses on the first line by default
 - New builtin `#cpdir(src; dst)`: recursively copy a directory
 - **Cross-platform**: new `src/cpp/platform.h` abstraction (UTF-8/16 conversion, shell, cwd, chdir, environment, temp dir); CMake build for Windows / Linux / macOS; registry builtins (`-regwrite` / `-regdelete` / `-regenv`) report "not supported" on non-Windows; `#platform` returns `windows` / `linux` / `mac`
