@@ -2,7 +2,14 @@
 
 [English](CHANGELOG.md) | [中文](CHANGELOG.zh-CN.md)
 
+## 1.7.0
+
+### Changed
+- **Single-file distribution** — the standard library (`csv.ves` / `json.ves` / `pkg.ves` / `stat.ves` / `text.ves`, ~19 KB) is now embedded into the executable. `vesna.exe` runs standalone with no `lib/` directory, no `VESNA_HOME` and no other files — copy one exe and everything works (including `--pkg`). External `lib/` files still take precedence, so users can still override modules by dropping a `.ves` next to their script or in `lib/`.
+- Version bump to 1.7.0.
+
 ## 1.6.0
+
 
 ### Added
 - **`#http_server(port; "handler")`** — a blocking HTTP server (native sockets, no dependencies). Each request builds `req = {method; path; headers; body}` and calls the handler by name; the handler returns a string (200) or `{code; body; type}` for full control

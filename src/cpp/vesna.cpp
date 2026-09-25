@@ -28,12 +28,13 @@
 #include "crypto.h"
 
 #include "platform.h"
+#include "embedded_lib.h"
 
 namespace vesna {
 
 static std::string parentDir(const std::string& path);
 static std::string strFloat(double f);
-const std::string VERSION = "1.6.0";
+const std::string VERSION = "1.7.0";
 
 
 // ============================================================
@@ -1973,9 +1974,8 @@ std::string Interp::interpStr(const std::string& tpl, const std::shared_ptr<Env>
 
 void Interp::doImport(const std::string& name, const std::shared_ptr<Env>& env) {
     std::string n = trimStr(name);
-    auto loadOne = [&](const std::string& p) -> bool {
-        if (!fileExists(p)) return false;
-        std::string src = readFileUtf8(p);
+    auto loadSrc = [&](const std::string& src, const std::string& p) -> bool {
+        if (src.empty()) return false;
         Parser sub_parser(preprocess(src), p);
         auto program = sub_parser.parse();
         if (!sub_parser.errors.empty()) {
@@ -1990,6 +1990,10 @@ void Interp::doImport(const std::string& name, const std::shared_ptr<Env>& env) 
         kept_.push_back(sub->g);  // 保活被导入函数闭包引用的环境
         return true;
     };
+    auto loadOne = [&](const std::string& p) -> bool {
+        if (!fileExists(p)) return false;
+        return loadSrc(readFileUtf8(p), p);
+    };
     std::vector<std::string> paths = {
         script_dir + "\\" + n + ".ves",
         script_dir + "\\lib\\" + n + ".ves",
@@ -1997,6 +2001,8 @@ void Interp::doImport(const std::string& name, const std::shared_ptr<Env>& env) 
         findVesnaHome() + "\\packages\\" + n + "\\" + n + ".ves",
     };
     for (const auto& p : paths) if (loadOne(p)) return;
+    // 单文件分发：内置 lib（csv/json/pkg/stat/text）嵌入 exe，无外部 lib 目录也能加载
+    if (loadSrc(embeddedLib(n + ".ves"), "<embedded>/" + n + ".ves")) return;
     // vpm 包：读取 vesna-pkg.json 的 entry 字段（entry 可与包名不同，如 hello_vesna -> hello.ves）
     std::string pkg_meta = findVesnaHome() + "\\packages\\" + n + "\\vesna-pkg.json";
     if (fileExists(pkg_meta)) {

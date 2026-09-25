@@ -2,7 +2,14 @@
 
 [English](CHANGELOG.md) | [中文](CHANGELOG.zh-CN.md)
 
+## 1.7.0
+
+### 变更
+- **单文件分发** —— 标准库（`csv.ves` / `json.ves` / `pkg.ves` / `stat.ves` / `text.ves`，约 19 KB）已嵌入可执行文件。`vesna.exe` 无需 `lib/` 目录、无需 `VESNA_HOME`、无需任何其他文件即可独立运行（含 `--pkg`）——拷贝单个 exe 即全部可用。外部 `lib/` 文件仍优先，用户依然可以通过在脚本旁或 `lib/` 中放置 `.ves` 覆盖内置模块。
+- 版本号升至 1.7.0。
+
 ## 1.6.0
+
 
 ### 新增
 - **`#http_server(port; "handler")`** —— 阻塞式 HTTP 服务（原生 socket，零依赖）。每个请求构造 `req = {method; path; headers; body}` 并按名调用 handler；handler 返回字符串（200）或 `{code; body; type}` 完全控制

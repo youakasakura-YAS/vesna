@@ -8,7 +8,7 @@
 
 [English](README.md) | [中文](README.zh-CN.md)
 
-![version](https://img.shields.io/badge/version-1.5.0-blue)
+![version](https://img.shields.io/badge/version-1.7.0-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![platform](https://img.shields.io/badge/platform-Windows-x64-lightgrey)
 
@@ -18,7 +18,7 @@
 - **对标**：`awk`、`sed`、`jq`、`perl`
 - **语言规范**：语义权威在 [Python 参考实现](https://github.com/youakasakura-YAS/vesna-py)（独立仓库）
 - **VSCode 插件**：[vesna-vscode-extension](https://github.com/youakasakura-YAS/vesna-vscode-extension)（语法高亮 + LSP）
-- **性能**：处理 10 万行日志约 240ms；183 个内置，含 HTTP 服务（`#http_server`）
+- **性能**：处理 10 万行日志约 240ms；183 个内置，含 HTTP 服务（`#http_server`）；单文件独立 exe
 - **语法**：缩进用 `-`，内置函数用 `#` 前缀，语句以 `,` 结尾
 
 ---
@@ -27,7 +27,7 @@
 
 ### 1. 下载
 
-从 [Releases](../../releases) 下载 `vesna-1.5.0-windows-x64.zip` 并解压到任意目录。
+从 [Releases](../../releases) 下载 `vesna-1.7.0-windows-x64.zip` 并解压到任意目录。**单文件分发**：标准库已内嵌，`vesna.exe` 无需旁挂文件即可运行。
 
 | 文件 | 说明 |
 |---|---|

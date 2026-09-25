@@ -1,6 +1,7 @@
 // main.cpp — Vesna 1.3.1 C++ 命令行入口
 #include "vesna.hpp"
 #include "platform.h"
+#include "embedded_lib.h"
 
 #include <iostream>
 #include <fstream>
@@ -269,13 +270,20 @@ int mainCli(int argc, char** argv) {
         std::vector<std::string> args;
         for (int i = 2; i < argc; ++i) args.emplace_back(argv[i]);
         std::string pkg_script = findVesnaHome() + "\\lib\\pkg.ves";
-        if (!fileExists(pkg_script)) {
-            std::cerr << "找不到包管理器脚本: " << pkg_script << std::endl;
-            return 1;
+        std::string src;
+        std::string shown = pkg_script;
+        if (fileExists(pkg_script)) {
+            src = readFileUtf8(pkg_script);
+        } else {
+            src = embeddedLib("pkg.ves");  // 单文件分发：包管理器脚本嵌入 exe
+            shown = "<embedded>/pkg.ves";
+            if (src.empty()) {
+                std::cerr << "找不到包管理器脚本: " << pkg_script << std::endl;
+                return 1;
+            }
         }
         try {
-            std::string src = readFileUtf8(pkg_script);
-            return runSource(src, args, ".", pkg_script, true);
+            return runSource(src, args, ".", shown, true);
         } catch (VesnaError& e) {
             std::cerr << "包管理器错误: " << e.str() << std::endl;
             return 1;
