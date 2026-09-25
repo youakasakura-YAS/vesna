@@ -1,4 +1,4 @@
-// vesna.hpp — Vesna 0.4.0 C++ 实现：声明
+// vesna.hpp — Vesna 1.0.0 C++ 实现：声明
 // 从 src/vesna.py 移植，保持语言语义一致
 #pragma once
 
@@ -13,7 +13,7 @@
 
 namespace vesna {
 
-extern const std::string VERSION;  // "0.4.0"
+extern const std::string VERSION;  // "1.0.0"
 
 // ============================================================
 // 错误与信号

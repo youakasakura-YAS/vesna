@@ -258,7 +258,7 @@ print(#f"name=(name), age=(age)"),
 
 ## 0.4 通用语言扩充
 
-0.4.0 新增。`#rand`、`#randint`、`#choice`、`#shuffle`、`#now`、`#date`、`#sleep`、`#ticks`、`#platform`、`#temp_dir` 为非确定性或依赖环境；其余均为确定性函数。
+1.0.0 新增。`#rand`、`#randint`、`#choice`、`#shuffle`、`#now`、`#date`、`#sleep`、`#ticks`、`#platform`、`#temp_dir` 为非确定性或依赖环境；其余均为确定性函数。
 
 ### 进阶数学
 

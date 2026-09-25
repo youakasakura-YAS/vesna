@@ -1,4 +1,4 @@
-// main.cpp — Vesna 0.4.0 C++ 命令行入口
+// main.cpp — Vesna 1.0.0 C++ 命令行入口
 #include "vesna.hpp"
 
 #include <iostream>
@@ -31,8 +31,8 @@ prefix = #sub(target; '1'; '3'),
 if not #fexists(prefix)-
 -print("错误: 盘符不存在 " + prefix),
 -#exit('1'),
-if not #fexists(src + "\\bin\\vesna_cpp.exe")-
--print("  错误: 找不到 bin\\vesna_cpp.exe"),
+if not #fexists(src + "\\bin\\vesna.exe")-
+-print("  错误: 找不到 bin\\vesna.exe"),
 -#exit('1'),
 if not #fexists(src + "\\lib\\csv.ves")-
 -print("  错误: 找不到 lib\\csv.ves"),
@@ -48,7 +48,7 @@ print("[2/6] 创建目录..."),
 print("  OK"),
 
 print("[3/6] 复制文件..."),
-#copy(src + "\\bin\\vesna_cpp.exe"; target + "\\bin\\vesna.exe"),
+#copy(src + "\\bin\\vesna.exe"; target + "\\bin\\vesna.exe"),
 if #fexists(src + "\\vesna.ico")-
 -#copy(src + "\\vesna.ico"; target + "\\vesna.ico"),
 print("  vesna.exe"),

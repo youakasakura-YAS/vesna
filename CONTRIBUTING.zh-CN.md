@@ -26,8 +26,8 @@ Python 参考实现位于独立仓库：[youakasakura-YAS/vesna-py](https://gith
 
 ```bat
 cd src\cpp
-g++ -std=c++17 -O3 -flto -static -Wall -Wextra vesna.cpp main.cpp -o vesna_cpp.exe -ladvapi32
-vesna_cpp.exe tests\regression.ves > cpp.out
+g++ -std=c++17 -O3 -flto -static -Wall -Wextra vesna.cpp main.cpp -o vesna.exe -ladvapi32
+vesna.exe tests\regression.ves > cpp.out
 git clone https://github.com/youakasakura-YAS/vesna-py
 python vesna-py\src\vesna.py tests\regression.ves > py.out
 fc cpp.out py.out            :: 必须无差异

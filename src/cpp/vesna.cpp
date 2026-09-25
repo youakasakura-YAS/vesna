@@ -1,4 +1,4 @@
-// vesna.cpp — Vesna 0.4.0 C++ 实现：词法 / 预处理 / 解析
+// vesna.cpp — Vesna 1.0.0 C++ 实现：词法 / 预处理 / 解析
 // 从 src/vesna.py 移植，保持语言语义一致
 #include "vesna.hpp"
 
@@ -31,7 +31,7 @@ namespace vesna {
 
 static std::string parentDir(const std::string& path);
 static std::string strFloat(double f);
-const std::string VERSION = "0.4.0";
+const std::string VERSION = "1.0.0";
 
 // ============================================================
 // 基础工具：UTF-8 <-> UTF-16

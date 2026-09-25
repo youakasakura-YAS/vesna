@@ -2,7 +2,7 @@
 
 [English](CHANGELOG.md) | [中文](CHANGELOG.zh-CN.md)
 
-## 0.4.0
+## 1.0.0
 
 ### Added
 - **General-purpose expansion**: 70 new builtins
@@ -24,7 +24,7 @@
 - `#regdelete` now deletes the whole key tree recursively
 
 ### Changed
-- Version bumped to 0.4.0
+- Version bumped to 1.0.0
 - `#format` supports precision (`%.2f`) in addition to `%s` `%d` `%f` `%%`
 
 ## 0.3.0

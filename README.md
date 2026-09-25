@@ -6,7 +6,7 @@
 
 [English](README.md) | [中文](README.zh-CN.md)
 
-![version](https://img.shields.io/badge/version-0.4.0-blue)
+![version](https://img.shields.io/badge/version-1.0.0-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![platform](https://img.shields.io/badge/platform-Windows-x64-lightgrey)
 
@@ -25,11 +25,11 @@
 
 ### 1. Download
 
-Grab `vesna-0.4.0-windows-x64.zip` from [Releases](../../releases) and extract it anywhere.
+Grab `vesna-1.0.0-windows-x64.zip` from [Releases](../../releases) and extract it anywhere.
 
 | File | Description |
 |---|---|
-| `bin\vesna_cpp.exe` | C++ interpreter (statically linked, no DLL dependencies) |
+| `bin\vesna.exe` | C++ interpreter (statically linked, no DLL dependencies) |
 | `lib\` | Standard library (csv / json / text / stat) |
 | `examples\` | Example scripts |
 | `docs\` | Documentation |
@@ -40,13 +40,13 @@ Grab `vesna-0.4.0-windows-x64.zip` from [Releases](../../releases) and extract i
 Installs to `C:\Vesna` by default:
 
 ```bat
-vesna_cpp.exe --install
+vesna.exe --install
 ```
 
 Custom path:
 
 ```bat
-vesna_cpp.exe --install D:\MyVesna
+vesna.exe --install D:\MyVesna
 ```
 
 After install, the `vesna` command works from any directory, and `.ves` file association is registered.
@@ -137,7 +137,7 @@ Modules live in `C:\Vesna\lib\` (or ship with this repo), used via `import xxx`:
 
 ## Performance
 
-`vesna_cpp.exe` vs the Python reference implementation ([vesna-py](https://github.com/youakasakura-YAS/vesna-py)):
+`vesna.exe` vs the Python reference implementation ([vesna-py](https://github.com/youakasakura-YAS/vesna-py)):
 
 | Benchmark | Python | C++ |
 |---|---|---|
@@ -154,14 +154,14 @@ Requires [MinGW-w64](https://www.mingw-w64.org/) (g++ 11+, Windows 10+):
 
 ```bat
 cd src\cpp
-g++ -std=c++17 -O3 -flto -static -Wall -Wextra vesna.cpp main.cpp -o vesna_cpp.exe -ladvapi32
+g++ -std=c++17 -O3 -flto -static -Wall -Wextra vesna.cpp main.cpp -o vesna.exe -ladvapi32
 ```
 
 Regression tests (line-by-line output must match the Python reference):
 
 ```bat
-vesna_cpp.exe tests\regression.ves
-vesna_cpp.exe tests\fs_test.ves
+vesna.exe tests\regression.ves
+vesna.exe tests\fs_test.ves
 git clone https://github.com/youakasakura-YAS/vesna-py   # reference impl
 python vesna-py\src\vesna.py tests\regression.ves        # outputs must match
 ```

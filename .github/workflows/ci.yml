@@ -26,14 +26,14 @@ jobs:
         shell: msys2 {0}
         run: |
           cd src/cpp
-          g++ -std=c++17 -O3 -flto -static -Wall -Wextra vesna.cpp main.cpp -o vesna_cpp.exe -ladvapi32
+          g++ -std=c++17 -O3 -flto -static -Wall -Wextra vesna.cpp main.cpp -o vesna.exe -ladvapi32
 
       - name: Smoke test
         shell: msys2 {0}
         run: |
           cd src/cpp
-          ./vesna_cpp.exe --version
-          echo 'print("hi"),' | ./vesna_cpp.exe
+          ./vesna.exe --version
+          echo 'print("hi"),' | ./vesna.exe
 
       # golden 基准由 Python 参考实现 0.3.0 生成（tests/golden/），
       # 生成命令见 tests/golden/README.md；C++ 输出必须与之逐行一致
@@ -42,7 +42,7 @@ jobs:
         run: |
           cd src/cpp
           export VESNA_HOME="$(pwd)/../.."
-          ./vesna_cpp.exe tests/regression.ves > cpp.out 2>&1
+          ./vesna.exe tests/regression.ves > cpp.out 2>&1
           diff cpp.out tests/golden/regression.out && echo "REGRESSION MATCH"
 
       - name: 0.4 builtins smoke vs golden
@@ -50,7 +50,7 @@ jobs:
         run: |
           cd src/cpp
           export VESNA_HOME="$(pwd)/../.."
-          ./vesna_cpp.exe tests/smoke04.ves > cpp.out 2>&1
+          ./vesna.exe tests/smoke04.ves > cpp.out 2>&1
           diff cpp.out tests/golden/smoke04.out && echo "SMOKE04 MATCH"
 
       - name: FS test vs golden
@@ -58,7 +58,7 @@ jobs:
         run: |
           cd src/cpp
           export VESNA_HOME="$(pwd)/../.."
-          ./vesna_cpp.exe tests/fs_test.ves > cpp.out 2>&1
+          ./vesna.exe tests/fs_test.ves > cpp.out 2>&1
           diff cpp.out tests/golden/fs_test.out && echo "FS MATCH"
 
       - name: Example scripts vs golden
@@ -82,7 +82,7 @@ jobs:
               uniq)     args="../../examples/sample.txt" ;;
               wc)       args="../../examples/sample.txt" ;;
             esac
-            ./vesna_cpp.exe "../../examples/$name.ves" $args > cpp.out 2>&1
+            ./vesna.exe "../../examples/$name.ves" $args > cpp.out 2>&1
             diff cpp.out "tests/golden/examples/$name.out" || exit 1
           done
           echo "EXAMPLES MATCH"
@@ -90,5 +90,5 @@ jobs:
       - name: Upload C++ binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: vesna_cpp-windows-x64
-          path: src/cpp/vesna_cpp.exe
+          name: vesna-windows-x64
+          path: src/cpp/vesna.exe

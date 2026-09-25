@@ -26,7 +26,7 @@ jobs:
         shell: msys2 {0}
         run: |
           cd src/cpp
-          g++ -std=c++17 -O3 -flto -static -Wall -Wextra vesna.cpp main.cpp -o vesna_cpp.exe -ladvapi32
+          g++ -std=c++17 -O3 -flto -static -Wall -Wextra vesna.cpp main.cpp -o vesna.exe -ladvapi32
 
       - name: Package VSCode extension (.vsix)
         run: |
@@ -39,7 +39,7 @@ jobs:
         run: |
           V=0.3.0
           mkdir -p release/vesna-$V-windows-x64/{bin,lib,examples,docs}
-          cp src/cpp/vesna_cpp.exe release/vesna-$V-windows-x64/bin/
+          cp src/cpp/vesna.exe release/vesna-$V-windows-x64/bin/
           cp lib/*.ves release/vesna-$V-windows-x64/lib/
           cp examples/*.ves release/vesna-$V-windows-x64/examples/
           cp docs/*.md release/vesna-$V-windows-x64/docs/

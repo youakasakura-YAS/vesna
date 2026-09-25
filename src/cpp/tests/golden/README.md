@@ -1,6 +1,6 @@
 # Golden 基准
 
-本目录由 **Python 参考实现 0.4.0**（youakasakura-YAS/vesna-py）生成，作为 C++ 实现逐行一致性对照的权威基准。
+本目录由 **Python 参考实现 1.0.0**（youakasakura-YAS/vesna-py）生成，作为 C++ 实现逐行一致性对照的权威基准。
 
 ## 生成命令
 

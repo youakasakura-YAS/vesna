@@ -258,7 +258,7 @@ print(#f"name=(name), age=(age)"),
 
 ## 0.4 General-purpose expansion
 
-Added in 0.4.0. `#rand`, `#randint`, `#choice`, `#shuffle`, `#now`, `#date`, `#sleep`, `#ticks`, `#platform`, `#temp_dir` are non-deterministic or environment-dependent; the rest are deterministic.
+Added in 1.0.0. `#rand`, `#randint`, `#choice`, `#shuffle`, `#now`, `#date`, `#sleep`, `#ticks`, `#platform`, `#temp_dir` are non-deterministic or environment-dependent; the rest are deterministic.
 
 ### Advanced math
 

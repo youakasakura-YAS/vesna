@@ -6,7 +6,7 @@
 
 [English](README.md) | [中文](README.zh-CN.md)
 
-![version](https://img.shields.io/badge/version-0.4.0-blue)
+![version](https://img.shields.io/badge/version-1.0.0-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![platform](https://img.shields.io/badge/platform-Windows-x64-lightgrey)
 
@@ -25,11 +25,11 @@
 
 ### 1. 下载
 
-从 [Releases](../../releases) 下载 `vesna-0.4.0-windows-x64.zip` 并解压到任意目录。
+从 [Releases](../../releases) 下载 `vesna-1.0.0-windows-x64.zip` 并解压到任意目录。
 
 | 文件 | 说明 |
 |---|---|
-| `bin\vesna_cpp.exe` | C++ 解释器（静态链接，无 DLL 依赖） |
+| `bin\vesna.exe` | C++ 解释器（静态链接，无 DLL 依赖） |
 | `lib\` | 标准库（csv / json / text / stat） |
 | `examples\` | 示例脚本 |
 | `docs\` | 文档 |
@@ -40,13 +40,13 @@
 默认安装到 `C:\Vesna`：
 
 ```bat
-vesna_cpp.exe --install
+vesna.exe --install
 ```
 
 自定义路径：
 
 ```bat
-vesna_cpp.exe --install D:\MyVesna
+vesna.exe --install D:\MyVesna
 ```
 
 安装后任意目录都能运行 `vesna` 命令，并注册 `.ves` 文件关联。
@@ -137,7 +137,7 @@ vesna csv2json.ves data.csv
 
 ## 性能
 
-`vesna_cpp.exe` 与 [Python 参考实现](https://github.com/youakasakura-YAS/vesna-py) 对比：
+`vesna.exe` 与 [Python 参考实现](https://github.com/youakasakura-YAS/vesna-py) 对比：
 
 | 基准 | Python | C++ |
 |---|---|---|
@@ -154,14 +154,14 @@ C++ 版优化（详见 [CHANGELOG.md](CHANGELOG.md)）：正则缓存、字面�
 
 ```bat
 cd src\cpp
-g++ -std=c++17 -O3 -flto -static -Wall -Wextra vesna.cpp main.cpp -o vesna_cpp.exe -ladvapi32
+g++ -std=c++17 -O3 -flto -static -Wall -Wextra vesna.cpp main.cpp -o vesna.exe -ladvapi32
 ```
 
 回归测试（输出须与 Python 参考实现逐行一致）：
 
 ```bat
-vesna_cpp.exe tests\regression.ves
-vesna_cpp.exe tests\fs_test.ves
+vesna.exe tests\regression.ves
+vesna.exe tests\fs_test.ves
 git clone https://github.com/youakasakura-YAS/vesna-py   # 参考实现
 python vesna-py\src\vesna.py tests\regression.ves        # 输出必须一致
 ```
