@@ -26,7 +26,7 @@ jobs:
         shell: msys2 {0}
         run: |
           cd src/cpp
-          g++ -std=c++17 -O3 -flto -static -Wall -Wextra vesna.cpp main.cpp -o vesna.exe -ladvapi32
+          g++ -std=c++17 -O3 -flto -static -Wall -Wextra vesna.cpp main.cpp -o vesna.exe -ladvapi32 -lws2_32
 
       - name: Smoke test
         shell: msys2 {0}
@@ -60,6 +60,56 @@ jobs:
           export VESNA_HOME="$(pwd)/../.."
           ./vesna.exe tests/fs_test.ves > cpp.out 2>&1
           diff cpp.out tests/golden/fs_test.out && echo "FS MATCH"
+
+      # 1.2 tier-3 golden（C++ 生成；依赖同目录 tier3_data.json）
+      - name: Tier 3 builtins vs golden
+        shell: msys2 {0}
+        run: |
+          cd "$GITHUB_WORKSPACE/src/cpp/tests"
+          export VESNA_HOME="$GITHUB_WORKSPACE"
+          ../vesna.exe tier3.ves > golden_check.out 2>&1
+          diff golden_check.out golden/tier3.out && echo "TIER3 MATCH"
+          rm -f golden_check.out
+
+      - name: Binary builtins vs golden
+        shell: msys2 {0}
+        run: |
+          cd "$GITHUB_WORKSPACE/src/cpp/tests"
+          export VESNA_HOME="$GITHUB_WORKSPACE"
+          ../vesna.exe binary.ves > golden_check.out 2>&1
+          diff golden_check.out golden/binary.out && echo "BINARY MATCH"
+          rm -f golden_check.out
+
+      # concurrency 输出含线程顺序抖动，仅运行验证（不逐行 diff）
+      - name: Concurrency builtins run check
+        shell: msys2 {0}
+        run: |
+          cd "$GITHUB_WORKSPACE/src/cpp/tests"
+          export VESNA_HOME="$GITHUB_WORKSPACE"
+          ../vesna.exe concurrency.ves > /dev/null 2>&1 && echo "CONCURRENCY RUN OK"
+
+      # 1.3 vpm 校验冒烟
+      - name: vpm validation smoke
+        shell: msys2 {0}
+        run: |
+          cd /tmp
+          export VESNA_HOME="$GITHUB_WORKSPACE"
+          if "$GITHUB_WORKSPACE/src/cpp/vesna.exe" --pkg init "Bad Name" > /dev/null 2>&1; then
+            echo "vpm init should reject bad name"; exit 1
+          fi
+          mkdir -p badpkg && echo '{"name":"badpkg","version":"v1"}' > badpkg/vesna-pkg.json
+          if "$GITHUB_WORKSPACE/src/cpp/vesna.exe" --pkg install badpkg > /dev/null 2>&1; then
+            echo "vpm install should reject bad version"; exit 1
+          fi
+          rm -rf badpkg
+          echo "VPM SMOKE OK"
+
+      # 1.3 LSP 冒烟（Python 驱动 JSON-RPC 子进程）
+      - name: LSP smoke
+        shell: msys2 {0}
+        run: |
+          python "$GITHUB_WORKSPACE/src/cpp/tests/lsp_smoke.py" | tail -n 1
+          python "$GITHUB_WORKSPACE/src/cpp/tests/lsp_smoke.py" | grep -q "ALL LSP TESTS PASSED"
 
       - name: Example scripts vs golden
         shell: msys2 {0}
