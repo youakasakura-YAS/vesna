@@ -1,4 +1,4 @@
-// main.cpp — Vesna 0.3.0 C++ 命令行入口
+// main.cpp — Vesna 0.4.0 C++ 命令行入口
 #include "vesna.hpp"
 
 #include <iostream>

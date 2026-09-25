@@ -2,6 +2,27 @@
 
 [English](CHANGELOG.md) | [中文](CHANGELOG.zh-CN.md)
 
+## 0.4.0
+
+### 新增
+- **通用语言扩充**：新增 70 个内置函数
+  - 数学：`#sqrt` `#floor` `#ceil` `#exp` `#log` `#log10` `#sin` `#cos` `#tan` `#sign` `#clamp` `#rand` `#randint` `#choice` `#shuffle`
+  - 进制：`#hex` `#bin` `#oct`
+  - 字符串：`#pad` `#lpad` `#rpad` `#format` `#hash`
+  - 列表：`#range` `#first` `#last` `#take` `#drop` `#set` `#flatten` `#zip` `#insert` `#remove` `#index_of` `#enumerate` `#concat`
+  - 字典：`#get` `#items` `#pop_key`
+  - 类型判断：`#is_str` `#is_int` `#is_float` `#is_bool` `#is_list` `#is_dict` `#is_none` `#is_group`
+  - 时间/系统：`#now` `#date` `#sleep` `#ticks` `#platform` `#temp_dir`
+  - 文件：`#fremove` `#fmove` `#fsize` `#is_dir` `#is_file` `#mkdirs`
+  - 编码：`#base64_encode` `#base64_decode` `#url_encode` `#url_decode`
+  - 函数式：`#each` `#all` `#any` `#find_first` `#sort_by`
+  - 异常：`#throw` `#assert`
+- CI 增加 0.4 内置冒烟测试 golden 对照（`tests/smoke04.ves`）
+
+### 变更
+- 版本号统一为 0.4.0
+- `#format` 在 `%s` `%d` `%f` `%%` 之外支持精度写法（`%.2f`）
+
 ## 0.3.0
 
 ### 新增

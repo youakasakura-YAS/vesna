@@ -2,6 +2,27 @@
 
 [English](CHANGELOG.md) | [中文](CHANGELOG.zh-CN.md)
 
+## 0.4.0
+
+### Added
+- **General-purpose expansion**: 70 new builtins
+  - Math: `#sqrt` `#floor` `#ceil` `#exp` `#log` `#log10` `#sin` `#cos` `#tan` `#sign` `#clamp` `#rand` `#randint` `#choice` `#shuffle`
+  - Number bases: `#hex` `#bin` `#oct`
+  - Strings: `#pad` `#lpad` `#rpad` `#format` `#hash`
+  - Lists: `#range` `#first` `#last` `#take` `#drop` `#set` `#flatten` `#zip` `#insert` `#remove` `#index_of` `#enumerate` `#concat`
+  - Dicts: `#get` `#items` `#pop_key`
+  - Type checks: `#is_str` `#is_int` `#is_float` `#is_bool` `#is_list` `#is_dict` `#is_none` `#is_group`
+  - Time & system: `#now` `#date` `#sleep` `#ticks` `#platform` `#temp_dir`
+  - Files: `#fremove` `#fmove` `#fsize` `#is_dir` `#is_file` `#mkdirs`
+  - Encoding: `#base64_encode` `#base64_decode` `#url_encode` `#url_decode`
+  - Functional: `#each` `#all` `#any` `#find_first` `#sort_by`
+  - Exceptions: `#throw` `#assert`
+- CI adds a golden comparison step for the 0.4 builtin smoke test (`tests/smoke04.ves`)
+
+### Changed
+- Version bumped to 0.4.0
+- `#format` supports precision (`%.2f`) in addition to `%s` `%d` `%f` `%%`
+
 ## 0.3.0
 
 ### Added

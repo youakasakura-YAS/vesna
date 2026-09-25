@@ -1,0 +1,55 @@
+﻿-sqrt(16) = '4'
+-floor(3.7) = '3'
+-ceil(3.2) = '4'
+-exp(0) = '1'
+-log(1) = '0'
+-log10(1000) = '3'
+-sin(0) = '0'
+-cos(0) = '1'
+-tan(0) = '0'
+-sign(-5) = '-1' -sign(0) = '0'
+-clamp(15; 0; 10) = '10'
+-hex(255) = ff
+-bin(5) = 101
+-oct(8) = 10
+-pad = **ab**
+-lpad = 000ab
+-rpad = ab000
+-format = v-42-3.14
+-hash('hello') = 11831194018420276491
+-range(1; 5) = ['1';'2';'3';'4']
+-range(5; 1; -2) = ['5';'3']
+-first = '1' -last = '3'
+-take = ['1';'2'] -drop = ['3';'4']
+-set = ['1';'2';'3']
+-flatten = ['1';'2';'3';['4']]
+-zip = [('1';a);('2';b)]
+-insert = ['1';'99';'2';'3']
+-remove = ['1';'3']
+-index_of = '2'
+-enumerate = [('1';a);('2';b)]
+-concat = ['1';'2';'3';'4']
+-get = '1' -get default = '9'
+-items = [(x;'1');(y;'2')]
+-pop_key = '1' -after = [y]
+-is_str = true -is_int = true -is_float = true
+-is_bool = true -is_list = true -is_dict = true
+-is_none = true -is_group = true
+-base64_encode = aGVsbG8=
+-base64_decode = hello
+-url_encode = a+b%26c
+-url_decode = a b&c
+-platform = windows
+-temp_dir = C:\Users\Administrator\AppData\Local\Temp
+-first none = none
+-each = ['1';'2';'3']
+-all = true -any = true
+-find_first = '2'
+-sort_by = [a;bb;ccc]
+-assert ok = none
+-shuffle type = list
+-rand type = float
+-randint type = int
+-now type = int
+-date len = '19'
+-ticks type = int

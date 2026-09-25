@@ -244,6 +244,132 @@ print(#f"name=(name), age=(age)"),
 
 ---
 
+
+---
+
+## 0.4 General-purpose expansion
+
+Added in 0.4.0. `#rand`, `#randint`, `#choice`, `#shuffle`, `#now`, `#date`, `#sleep`, `#ticks`, `#platform`, `#temp_dir` are non-deterministic or environment-dependent; the rest are deterministic.
+
+### Advanced math
+
+| Function | Description |
+|---|---|
+| `#sqrt(x)` | square root |
+| `#floor(x)` / `#ceil(x)` | floor / ceiling |
+| `#exp(x)` | e^x |
+| `#log(x)` / `#log10(x)` | natural / base-10 log (x > 0) |
+| `#sin(x)` / `#cos(x)` / `#tan(x)` | trigonometry (radians) |
+| `#sign(x)` | -1 / 0 / 1 |
+| `#clamp(x; lo; hi)` | clamp into [lo; hi] |
+| `#rand()` | random float in [0; 1) |
+| `#randint(a; b)` | random int in [a; b] |
+| `#choice(a)` | random element of a list |
+| `#shuffle(a)` | shuffled copy of a list |
+
+### Number bases
+
+| Function | Description |
+|---|---|
+| `#hex(n)` | to hexadecimal (no prefix, lowercase) |
+| `#bin(n)` | to binary |
+| `#oct(n)` | to octal |
+
+### Strings
+
+| Function | Description |
+|---|---|
+| `#pad(s; w; c)` | center-pad s to width w with c |
+| `#lpad(s; w; c)` | right-align (pad left) |
+| `#rpad(s; w; c)` | left-align (pad right) |
+| `#format(fmt; ...)` | C-style formatting: `%s` `%d` `%f` `%.2f` `%%` |
+| `#hash(s)` | deterministic FNV-1a 64-bit hash (decimal string) |
+
+```text
+#format("%s-%d-%.2f"; "v"; '42'; '3.14159'),  /* "v-42-3.14" */
+#hash("hello"),                               /* deterministic 64-bit number */
+#lpad("ab"; '5'; "0"),                        /* "000ab" */
+```
+
+### Lists
+
+| Function | Description |
+|---|---|
+| `#range(start; end; step)` | integer sequence `[start; end)` |
+| `#first(a)` / `#last(a)` | first / last element, none if empty |
+| `#take(a; n)` / `#drop(a; n)` | keep / drop first n elements |
+| `#set(a)` | unique elements, order kept |
+| `#flatten(a)` | flatten one level |
+| `#zip(a; b)` | pair elements into groups |
+| `#insert(a; i; x)` | new list with x inserted at 1-based i |
+| `#remove(a; i)` | new list without the 1-based i-th element |
+| `#index_of(a; x)` | 1-based position, 0 if absent |
+| `#enumerate(a)` | `[(i; v); ...]` with 1-based index |
+| `#concat(a; b)` | concatenate two lists |
+
+```text
+#range('1'; '5'),          /* ['1';'2';'3';'4'] */
+#zip(['1';'2']; ["a";"b"]),/* [('1';a);('2';b)] */
+#set(['1';'1';'2']),       /* ['1';'2'] */
+```
+
+### Dicts
+
+| Function | Description |
+|---|---|
+| `#get(d; k; default)` | value for key, or default (none) |
+| `#items(d)` | `[(k; v); ...]` |
+| `#pop_key(d; k)` | remove key, return old value (or none) |
+
+### Type checks
+
+`#is_str` `#is_int` `#is_float` `#is_bool` `#is_list` `#is_dict` `#is_none` `#is_group`
+
+### Time & system
+
+| Function | Description |
+|---|---|
+| `#now()` | unix timestamp (int) |
+| `#date(fmt)` | formatted local time (default `%Y-%m-%d %H:%M:%S`) |
+| `#sleep(ms)` | sleep milliseconds |
+| `#ticks()` | monotonic milliseconds since start |
+| `#platform()` | `"windows"` |
+| `#temp_dir()` | system temp directory |
+
+### Files
+
+| Function | Description |
+|---|---|
+| `#fremove(path)` | delete file (missing is fine) |
+| `#fmove(src; dst)` | move file |
+| `#fsize(path)` | file size in bytes |
+| `#is_dir(path)` / `#is_file(path)` | path type checks |
+| `#mkdirs(path)` | create directories recursively |
+
+### Encoding
+
+| Function | Description |
+|---|---|
+| `#base64_encode(s)` / `#base64_decode(s)` | base64 encode / decode |
+| `#url_encode(s)` / `#url_decode(s)` | URL percent-encoding (space → `+`) |
+
+### Functional
+
+| Function | Description |
+|---|---|
+| `#each(list; "fn")` | call fn for side effects, returns the list |
+| `#all(list; "fn")` | every element truthy? |
+| `#any(list; "fn")` | any element truthy? |
+| `#find_first(list; "fn")` | first truthy element, none if absent |
+| `#sort_by(list; "fn")` | stable sort by fn key |
+
+### Exceptions
+
+| Function | Description |
+|---|---|
+| `#throw(msg)` | raise an error |
+| `#assert(cond; msg)` | raise if cond is falsy |
+
 ## Full example
 
 ```text

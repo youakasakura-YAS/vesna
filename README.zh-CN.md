@@ -6,7 +6,7 @@
 
 [English](README.md) | [中文](README.zh-CN.md)
 
-![version](https://img.shields.io/badge/version-0.3.0-blue)
+![version](https://img.shields.io/badge/version-0.4.0-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![platform](https://img.shields.io/badge/platform-Windows-x64-lightgrey)
 
@@ -25,7 +25,7 @@
 
 ### 1. 下载
 
-从 [Releases](../../releases) 下载 `vesna-0.3.0-windows-x64.zip` 并解压到任意目录。
+从 [Releases](../../releases) 下载 `vesna-0.4.0-windows-x64.zip` 并解压到任意目录。
 
 | 文件 | 说明 |
 |---|---|

@@ -45,6 +45,14 @@ jobs:
           ./vesna_cpp.exe tests/regression.ves > cpp.out 2>&1
           diff cpp.out tests/golden/regression.out && echo "REGRESSION MATCH"
 
+      - name: 0.4 builtins smoke vs golden
+        shell: msys2 {0}
+        run: |
+          cd src/cpp
+          export VESNA_HOME="$(pwd)/../.."
+          ./vesna_cpp.exe tests/smoke04.ves > cpp.out 2>&1
+          diff cpp.out tests/golden/smoke04.out && echo "SMOKE04 MATCH"
+
       - name: FS test vs golden
         shell: msys2 {0}
         run: |

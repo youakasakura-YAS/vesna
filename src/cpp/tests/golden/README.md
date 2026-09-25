@@ -1,6 +1,6 @@
 # Golden 基准
 
-本目录由 **Python 参考实现 0.3.0**（youakasakura-YAS/vesna-py）生成，作为 C++ 实现逐行一致性对照的权威基准。
+本目录由 **Python 参考实现 0.4.0**（youakasakura-YAS/vesna-py）生成，作为 C++ 实现逐行一致性对照的权威基准。
 
 ## 生成命令
 
@@ -11,6 +11,7 @@ set VESNA_HOME=repo根目录
 cd src\cpp
 python repo根\src\vesna.py tests\regression.ves > tests\golden\regression.out
 python repo根\src\vesna.py tests\fs_test.ves    > tests\golden\fs_test.out
+python repo根\src\vesna.py tests\smoke04.ves    > tests\golden\smoke04.out
 
 cd examples
 python repo根\src\vesna.py csv2json.ves sample.csv          > ..\src\cpp\tests\golden\examples\csv2json.out

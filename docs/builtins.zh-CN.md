@@ -244,6 +244,132 @@ print(#f"name=(name), age=(age)"),
 
 ---
 
+
+---
+
+## 0.4 通用语言扩充
+
+0.4.0 新增。`#rand`、`#randint`、`#choice`、`#shuffle`、`#now`、`#date`、`#sleep`、`#ticks`、`#platform`、`#temp_dir` 为非确定性或依赖环境；其余均为确定性函数。
+
+### 进阶数学
+
+| 函数 | 说明 |
+|---|---|
+| `#sqrt(x)` | 平方根 |
+| `#floor(x)` / `#ceil(x)` | 向下 / 向上取整 |
+| `#exp(x)` | e 的 x 次方 |
+| `#log(x)` / `#log10(x)` | 自然 / 常用对数（x > 0） |
+| `#sin(x)` / `#cos(x)` / `#tan(x)` | 三角函数（弧度） |
+| `#sign(x)` | -1 / 0 / 1 |
+| `#clamp(x; lo; hi)` | 夹取到 [lo; hi] |
+| `#rand()` | [0; 1) 随机浮点数 |
+| `#randint(a; b)` | [a; b] 随机整数 |
+| `#choice(a)` | 列表随机取一个元素 |
+| `#shuffle(a)` | 返回打乱后的副本 |
+
+### 进制
+
+| 函数 | 说明 |
+|---|---|
+| `#hex(n)` | 转十六进制（无前缀、小写） |
+| `#bin(n)` | 转二进制 |
+| `#oct(n)` | 转八进制 |
+
+### 字符串
+
+| 函数 | 说明 |
+|---|---|
+| `#pad(s; w; c)` | 用 c 将 s 居中补齐到宽度 w |
+| `#lpad(s; w; c)` | 右对齐（左侧补齐） |
+| `#rpad(s; w; c)` | 左对齐（右侧补齐） |
+| `#format(fmt; ...)` | C 风格格式化：`%s` `%d` `%f` `%.2f` `%%` |
+| `#hash(s)` | 确定性 FNV-1a 64 位哈希（十进制字符串） |
+
+```text
+#format("%s-%d-%.2f"; "v"; '42'; '3.14159'),  /* "v-42-3.14" */
+#hash("hello"),                               /* 确定性 64 位数字 */
+#lpad("ab"; '5'; "0"),                        /* "000ab" */
+```
+
+### 列表
+
+| 函数 | 说明 |
+|---|---|
+| `#range(start; end; step)` | 整数序列 `[start; end)` |
+| `#first(a)` / `#last(a)` | 首 / 尾元素（空则 none） |
+| `#take(a; n)` / `#drop(a; n)` | 保留 / 去掉前 n 个 |
+| `#set(a)` | 去重（保序） |
+| `#flatten(a)` | 展开一层 |
+| `#zip(a; b)` | 两两配对为组 |
+| `#insert(a; i; x)` | 在 1 起始位置 i 插入 x，返回新列表 |
+| `#remove(a; i)` | 删除 1 起始第 i 个元素，返回新列表 |
+| `#index_of(a; x)` | 1 起始位置，找不到为 0 |
+| `#enumerate(a)` | `[(i; v); ...]`，索引从 1 起 |
+| `#concat(a; b)` | 拼接两个列表 |
+
+```text
+#range('1'; '5'),          /* ['1';'2';'3';'4'] */
+#zip(['1';'2']; ["a";"b"]),/* [('1';a);('2';b)] */
+#set(['1';'1';'2']),       /* ['1';'2'] */
+```
+
+### 字典
+
+| 函数 | 说明 |
+|---|---|
+| `#get(d; k; default)` | 取键值，缺失返回 default（默认 none） |
+| `#items(d)` | `[(k; v); ...]` |
+| `#pop_key(d; k)` | 删除键并返回旧值（无则 none） |
+
+### 类型判断
+
+`#is_str` `#is_int` `#is_float` `#is_bool` `#is_list` `#is_dict` `#is_none` `#is_group`
+
+### 时间 / 系统
+
+| 函数 | 说明 |
+|---|---|
+| `#now()` | Unix 时间戳（int） |
+| `#date(fmt)` | 本地时间格式化（默认 `%Y-%m-%d %H:%M:%S`） |
+| `#sleep(ms)` | 睡眠毫秒 |
+| `#ticks()` | 自启动起单调毫秒数 |
+| `#platform()` | `"windows"` |
+| `#temp_dir()` | 系统临时目录 |
+
+### 文件
+
+| 函数 | 说明 |
+|---|---|
+| `#fremove(path)` | 删除文件（不存在不报错） |
+| `#fmove(src; dst)` | 移动文件 |
+| `#fsize(path)` | 文件字节数 |
+| `#is_dir(path)` / `#is_file(path)` | 路径类型判断 |
+| `#mkdirs(path)` | 递归创建目录 |
+
+### 编码
+
+| 函数 | 说明 |
+|---|---|
+| `#base64_encode(s)` / `#base64_decode(s)` | base64 编解码 |
+| `#url_encode(s)` / `#url_decode(s)` | URL 百分号编码（空格 → `+`） |
+
+### 函数式
+
+| 函数 | 说明 |
+|---|---|
+| `#each(list; "fn")` | 对每个元素执行副作用，返回原列表 |
+| `#all(list; "fn")` | 全部为真？ |
+| `#any(list; "fn")` | 任一为真？ |
+| `#find_first(list; "fn")` | 第一个为真的元素（无则 none） |
+| `#sort_by(list; "fn")` | 按 fn 键稳定排序 |
+
+### 异常
+
+| 函数 | 说明 |
+|---|---|
+| `#throw(msg)` | 抛出错误 |
+| `#assert(cond; msg)` | 条件为假则抛出 |
+
 ## 完整例子
 
 ```text
