@@ -60,3 +60,4 @@ bin/vesna.exe
 _backup/
 # vpm 运行时缓存的 registry 索引
 registry.json
+packages/

@@ -32,19 +32,19 @@ jobs:
         run: |
           cd vesna-vscode
           npm install --quiet
-          npx --yes @vscode/vsce package --out vesna-0.4.0.vsix
+          npx --yes @vscode/vsce package --out vesna-0.5.0.vsix
 
       - name: Assemble release folder
         shell: msys2 {0}
         run: |
-          V=1.3.1
+          V=1.4.0
           mkdir -p release/vesna-$V-windows-x64/{bin,lib,examples,docs}
           cp src/cpp/vesna.exe release/vesna-$V-windows-x64/bin/
           cp lib/*.ves release/vesna-$V-windows-x64/lib/
           cp examples/*.ves release/vesna-$V-windows-x64/examples/
           cp docs/*.md release/vesna-$V-windows-x64/docs/
           cp README.md README.zh-CN.md CHANGELOG.md CHANGELOG.zh-CN.md CONTRIBUTING.md CONTRIBUTING.zh-CN.md LICENSE icon.png vesna.ico release/vesna-$V-windows-x64/
-          cp vesna-vscode/vesna-0.4.0.vsix release/vesna-$V-windows-x64/vesna-0.4.0.vsix
+          cp vesna-vscode/vesna-0.5.0.vsix release/vesna-$V-windows-x64/vesna-0.5.0.vsix
           if [ -f release/RELEASE-NOTES-$V.md ]; then cp release/RELEASE-NOTES-$V.md release/vesna-$V-windows-x64/; fi
           cd release
           powershell -Command "Compress-Archive -Path vesna-$V-windows-x64 -DestinationPath vesna-$V-windows-x64.zip -Force"
@@ -54,5 +54,5 @@ jobs:
         with:
           files: |
             release/vesna-*.zip
-            release/vesna-*/vesna-0.4.0.vsix
+            release/vesna-*/vesna-0.5.0.vsix
           generate_release_notes: true

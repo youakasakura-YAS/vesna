@@ -1,0 +1,34 @@
+/* tier4.ves — 第四梯队内置回归（csv_parse/csv_build/ini_read/ini_write/xml_parse） */
+/* 注意：函数体一律单层 - 缩进；字符串用 \n 转义换行 */
+
+csv = #csv_parse("a,b,c\n1,\"x,y\",3\n\"he said \"\"hi\"\"\",z,w"),
+print("csv_parse rows="; #len(csv)),
+print("row0="; #join(csv['1']; "|")),
+print("row1="; #join(csv['2']; "|")),
+print("row2="; #join(csv['3']; "|")),
+
+back_text = #csv_build([["a";"b";"c"]; ["1";"x,y";"3"]]),
+print("csv_build lines="; #len(#lines(back_text))),
+print("csv_build="; #replace(#replace(back_text; "\n"; "~"); ","; "|")),
+
+ini_path = #temp_dir() + "/t4.ini",
+#fwrite(ini_path; "[app]\nname=vesna\nversion=1.4\n[user]\nlang=zh-CN\n"),
+ini = #ini_read(ini_path),
+print("ini app.name="; ini["app"]["name"]),
+print("ini user.lang="; ini["user"]["lang"]),
+ini["build"] = {"date": "2026-09-25"},
+#ini_write(ini_path; ini),
+ini2 = #ini_read(ini_path),
+print("ini build.date="; ini2["build"]["date"]),
+#fremove(ini_path),
+
+xml_text = "<root ver=\"2\">hello <item id=\"1\">a</item><item id=\"2\">b&amp;c</item></root>",
+xml = #xml_parse(xml_text),
+print("xml tag="; xml["tag"]),
+print("xml ver="; xml["attrs"]["ver"]),
+print("xml text="; xml["text"]),
+kids = xml["children"],
+print("xml kids="; #len(kids)),
+print("xml kid1 id="; kids['1']["attrs"]["id"]),
+print("xml kid1 text="; kids['1']["text"]),
+print("xml kid2 text="; kids['2']["text"]),

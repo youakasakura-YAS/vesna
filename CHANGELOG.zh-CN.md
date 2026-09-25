@@ -2,6 +2,15 @@
 
 [English](CHANGELOG.md) | [中文](CHANGELOG.zh-CN.md)
 
+## 1.4.0
+
+### 新增
+- **原生 C++ LSP**：`vesna.exe --lsp` —— 内置语言服务器（stdio JSON-RPC），诊断复用 C++ `Parser` 错误收集；补全覆盖全部内置（单一名字表 + 文档标识符，`#` 触发）；悬停（内置/关键字文档 + 函数定义）；`documentSymbol`（函数）；`foldingRange`（缩进块）
+- **VSCode 插件 0.5.0**：`vesna-0.5.0.vsix` —— 服务器改为启动 `vesna --lsp`（不再依赖 Python）；Python LSP 服务器目录已移除
+- **第四梯队内置**（dispatch 170-175）：`#csv_parse(s)` → 行列列表；`#csv_build(rows)` → CSV 文本（RFC-4180 引号）；`#ini_read(path)` / `#ini_write(path; data)`（节/键/值，`;` `#` 注释）；`#xml_parse(s)` → 简易 DOM `{tag; attrs; children; text}`（属性、嵌套、自闭合、`&amp;` `&lt;` `&gt;` `&quot;` `&apos;`）；`#ffi_call_s(dll; func; arg...)` → `char*` 结果转为字符串
+- **CI 修复**：编译补 `-lws2_32`（1.1 网络内置）；golden 回归扩展 tier3 / binary / tier4；concurrency 运行检查；vpm 校验冒烟；LSP 冒烟直接驱动编译出的 `vesna.exe --lsp`；`release.yml` 对齐 1.4.0（`vesna-0.5.0.vsix`、`-lws2_32`、双语 README/CHANGELOG/CONTRIBUTING + RELEASE-NOTES）
+- **内置单源事实**：175 项名字表 `g_builtinNames` 同时驱动词法内置集合、分发表与 LSP 补全（此前是三份手工维护的表）
+
 ## 1.3.1
 
 ### 修复

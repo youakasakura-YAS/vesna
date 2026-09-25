@@ -30,7 +30,7 @@ namespace vesna {
 
 static std::string parentDir(const std::string& path);
 static std::string strFloat(double f);
-const std::string VERSION = "1.3.1";
+const std::string VERSION = "1.4.0";
 
 
 // ============================================================
@@ -444,50 +444,16 @@ static const std::set<std::string> KEYWORDS = {
     "try", "catch", "import", "and", "or", "not",
 };
 
-static const std::set<std::string> BUILTINS = {
-    "up", "down", "into", "f",
-    "len", "sub", "split", "join", "find", "replace",
-    "append", "pop", "keys", "values", "type",
-    "args", "fread", "fwrite", "fexists", "exit",
-    "trim", "startswith", "endswith", "lines", "repeat",
-    "sort", "reverse", "map", "filter", "reduce", "slice",
-    "match", "findall", "gsub", "search",
-    "ls", "glob", "fappend", "stdin",
-    "has_key",
-    "str", "int", "float", "bool",
-    "char_at", "ord", "chr",
-    "is_digit", "is_alpha", "is_alnum", "is_space",
-    "lstrip", "rstrip", "title", "capitalize",
-    "count", "rfind",
-    "min", "max", "sum", "abs", "round", "pow",
-    "contains",
-    "mkdir", "copy", "rmdir", "rename",
-    "getenv", "setenv", "cwd", "chdir",
-    "regwrite", "regdelete", "shell", "path_clean", "regenv", "cpdir",
-    /* ---- 0.4 閫氱敤缂栫▼璇█鎵╁厖 ---- */
-    "sqrt", "floor", "ceil", "exp", "log", "log10",
-    "sin", "cos", "tan", "sign", "clamp",
-    "rand", "randint", "choice", "shuffle",
-    "hex", "bin", "oct",
-    "pad", "lpad", "rpad", "format", "hash",
-    "range", "first", "last", "take", "drop", "set",
-    "flatten", "zip", "insert", "remove", "index_of",
-    "enumerate", "concat",
-    "get", "items", "pop_key",
-    "is_str", "is_int", "is_float", "is_bool",
-    "is_list", "is_dict", "is_none", "is_group",
-    "now", "date", "sleep", "ticks", "platform", "temp_dir",
-    "fremove", "fmove", "fsize", "is_dir", "is_file", "mkdirs",
-    "base64_encode", "base64_decode", "url_encode", "url_decode",
-    "each", "all", "any", "find_first", "sort_by",
-    "throw", "assert",
-    "thread", "thread_join", "thread_count", "lock", "unlock",
-    "http_get", "http_post", "tcp_ping",
-    "bin_read", "bin_write", "bin_hex", "bin_unhex",
-    "bin_base64_encode", "bin_base64_decode",
-    "json_encode", "json_decode", "re_groups", "sha256",
-    "aes_encrypt", "aes_decrypt", "proc_run", "ffi_call",
-};
+// 惰性构建（g_builtinNames 定义在 BUILTINS 之后，避免静态初始化顺序问题）
+static const std::set<std::string>& builtinSet() {
+    static const std::set<std::string> m = []{
+        std::set<std::string> s;
+        for (const auto& p : g_builtinNames) s.insert(p.first);
+        s.insert("into");  // 类型转换关键字（未在注册表）
+        return s;
+    }();
+    return m;
+}
 
 static const std::set<std::string> TYPE_KEYWORDS = {"int", "str", "float", "list", "dict", "bool"};
 
@@ -519,7 +485,7 @@ std::vector<Token> lexExpr(const std::string& s, int ln) {
             size_t j = i + 1;
             while (j < n && (std::isalnum((unsigned char)s[j]) || s[j] == '_')) ++j;
             std::string w = s.substr(i + 1, j - i - 1);
-            if (BUILTINS.count(w)) {
+            if (builtinSet().count(w)) {
                 Token t; t.kind = TK_BUILTIN; t.value = w; t.line = ln;
                 toks.push_back(std::move(t));
                 i = j;
@@ -2560,6 +2526,218 @@ static std::pair<int, std::string> procRun(const std::string& cmd) {
     return { rc, out };
 }
 
+// 内置函数注册表（名字 -> dispatch id）—— LSP 补全与 builtin() 共用
+const std::vector<std::pair<std::string, int>> g_builtinNames = {
+    {"up",1},{"down",2},{"len",3},{"sub",4},{"split",5},{"join",6},{"find",7},{"replace",8},{"append",9},{"pop",10},{"keys",11},{"values",12},{"type",13},{"args",14},{"fread",15},{"fwrite",16},{"fappend",17},{"fexists",18},{"exit",19},{"f",20},{"trim",21},{"startswith",22},{"endswith",23},{"lines",24},{"repeat",25},{"has_key",26},{"str",27},{"int",28},{"float",29},{"bool",30},{"char_at",31},{"sort",32},{"reverse",33},{"slice",34},{"map",35},{"filter",36},{"reduce",37},{"match",38},{"search",39},{"findall",40},{"gsub",41},{"ls",42},{"glob",43},{"stdin",44},{"ord",45},{"chr",46},{"is_digit",47},{"is_alpha",48},{"is_alnum",49},{"is_space",50},{"lstrip",51},{"rstrip",52},{"title",53},{"capitalize",54},{"count",55},{"rfind",56},{"min",57},{"max",58},{"sum",59},{"abs",60},{"round",61},{"pow",62},{"contains",63},{"mkdir",64},{"copy",65},{"rmdir",66},{"rename",67},{"getenv",68},{"setenv",69},{"cwd",70},{"chdir",71},{"regwrite",72},{"regdelete",73},{"shell",74},{"path_clean",75},{"regenv",146},{"cpdir",147},{"sqrt",76},{"floor",77},{"ceil",78},{"exp",79},{"log",80},{"log10",81},{"sin",82},{"cos",83},{"tan",84},{"sign",85},{"clamp",86},{"rand",87},{"randint",88},{"choice",89},{"shuffle",145},{"hex",90},{"bin",91},{"oct",92},{"pad",93},{"lpad",94},{"rpad",95},{"format",96},{"hash",97},{"range",98},{"first",99},{"last",100},{"take",101},{"drop",102},{"set",103},{"flatten",104},{"zip",105},{"insert",106},{"remove",107},{"index_of",108},{"enumerate",109},{"concat",110},{"get",111},{"items",112},{"pop_key",113},{"is_str",114},{"is_int",115},{"is_float",116},{"is_bool",117},{"is_list",118},{"is_dict",119},{"is_none",120},{"is_group",121},{"now",122},{"date",123},{"sleep",124},{"ticks",125},{"platform",126},{"temp_dir",127},{"fremove",128},{"fmove",129},{"fsize",130},{"is_dir",131},{"is_file",132},{"mkdirs",133},{"base64_encode",134},{"base64_decode",135},{"url_encode",136},{"url_decode",137},{"each",138},{"all",139},{"any",140},{"find_first",141},{"sort_by",142},{"throw",143},{"assert",144},{"thread",148},{"thread_join",149},{"thread_count",150},{"lock",151},{"unlock",152},{"http_get",153},{"http_post",154},{"tcp_ping",155},{"bin_read",156},{"bin_write",157},{"bin_hex",158},{"bin_unhex",159},{"bin_base64_encode",160},{"bin_base64_decode",161},{"json_encode",162},{"json_decode",163},{"re_groups",164},{"sha256",165},{"aes_encrypt",166},{"aes_decrypt",167},{"proc_run",168},{"ffi_call",169},
+    {"csv_parse",170},{"csv_build",171},{"ini_read",172},{"ini_write",173},
+    {"xml_parse",174},{"ffi_call_s",175}
+};
+
+
+// ============================================================
+// 第四梯队 helper：CSV / INI / XML（纯 C++ 自研，无第三方依赖）
+// ============================================================
+
+static std::vector<std::vector<std::string>> csvParse(const std::string& s) {
+    std::vector<std::vector<std::string>> rows;
+    std::vector<std::string> row;
+    std::string field;
+    bool inQ = false;
+    size_t i = 0, n = s.size();
+    while (i < n) {
+        char c = s[i];
+        if (inQ) {
+            if (c == '"') {
+                if (i + 1 < n && s[i + 1] == '"') { field += '"'; i += 2; }
+                else { inQ = false; ++i; }
+            } else { field += c; ++i; }
+        } else if (c == '"') { inQ = true; ++i; }
+        else if (c == ',') { row.push_back(field); field.clear(); ++i; }
+        else if (c == '\n' || c == '\r') {
+            if (c == '\r' && i + 1 < n && s[i + 1] == '\n') ++i;
+            row.push_back(field); field.clear();
+            rows.push_back(row); row.clear();
+            ++i;
+        } else { field += c; ++i; }
+    }
+    if (!field.empty() || !row.empty()) { row.push_back(field); rows.push_back(row); }
+    return rows;
+}
+
+static std::string csvBuild(const std::vector<std::vector<std::string>>& rows) {
+    std::string out;
+    for (const auto& row : rows) {
+        for (size_t i = 0; i < row.size(); ++i) {
+            if (i) out += ',';
+            const std::string& f = row[i];
+            if (f.find_first_of(",\"\"\n\r") != std::string::npos) {
+                out += '"';
+                for (char c : f) { if (c == '"') out += "\"\""; else out += c; }
+                out += '"';
+            } else out += f;
+        }
+        out += '\n';
+    }
+    return out;
+}
+
+static std::map<std::string, std::map<std::string, std::string>> iniParse(const std::string& s) {
+    std::map<std::string, std::map<std::string, std::string>> out;
+    std::string section;
+    size_t i = 0, n = s.size();
+    std::string line;
+    auto flushLine = [&]() {
+        size_t b = line.find_first_not_of(" \t\r");
+        if (b == std::string::npos) return;
+        size_t e = line.find_last_not_of(" \t\r");
+        std::string l = line.substr(b, e - b + 1);
+        if (l.empty() || l[0] == ';' || l[0] == '#') return;
+        if (!l.empty() && l[0] == '[') {
+            size_t rb = l.find(']');
+            if (rb != std::string::npos) section = l.substr(1, rb - 1);
+            return;
+        }
+        size_t eq = l.find('=');
+        if (eq == std::string::npos) return;
+        std::string k = l.substr(0, eq);
+        std::string v = l.substr(eq + 1);
+        size_t kb = k.find_first_not_of(" \t"); k = k.substr(kb == std::string::npos ? 0 : kb);
+        size_t ke = k.find_last_not_of(" \t"); if (ke != std::string::npos) k = k.substr(0, ke + 1);
+        size_t vb = v.find_first_not_of(" \t"); if (vb != std::string::npos) v = v.substr(vb);
+        size_t ve = v.find_last_not_of(" \t"); if (ve != std::string::npos) v = v.substr(0, ve + 1);
+        out[section][k] = v;
+    };
+    while (i < n) {
+        char c = s[i];
+        if (c == '\n' || c == '\r') {
+            if (c == '\r' && i + 1 < n && s[i + 1] == '\n') ++i;
+            flushLine();
+            line.clear();
+        } else line += c;
+        ++i;
+    }
+    flushLine();
+    return out;
+}
+
+static std::string iniBuild(const std::map<std::string, std::map<std::string, std::string>>& data) {
+    std::string out;
+    for (const auto& [sec, kv] : data) {
+        out += "[" + sec + "]\n";
+        for (const auto& [k, v] : kv) out += k + "=" + v + "\n";
+        out += "\n";
+    }
+    return out;
+}
+
+struct XmlNode {
+    std::string tag;
+    std::map<std::string, std::string> attrs;
+    std::vector<XmlNode> children;
+    std::string text;
+};
+
+static void xmlUnescape(std::string& s) {
+    std::string r;
+    size_t i = 0, n = s.size();
+    while (i < n) {
+        if (s[i] == '&' && i + 3 < n && s[i + 3] == ';') {
+            std::string ent = s.substr(i + 1, 2);
+            if (ent == "lt") { r += '<'; i += 4; continue; }
+            if (ent == "gt") { r += '>'; i += 4; continue; }
+        }
+        if (s[i] == '&' && i + 4 < n && s[i + 4] == ';') {
+            std::string ent = s.substr(i + 1, 3);
+            if (ent == "amp") { r += '&'; i += 5; continue; }
+            if (ent == "quot") { r += '"'; i += 5; continue; }
+        }
+        if (s[i] == '&' && i + 5 < n && s[i + 5] == ';') {
+            std::string ent = s.substr(i + 1, 4);
+            if (ent == "apos") { r += '\''; i += 6; continue; }
+        }
+        r += s[i++];
+    }
+    s = r;
+}
+
+static bool xmlSkipWs(const std::string& s, size_t& i, size_t n) {
+    while (i < n && (s[i] == ' ' || s[i] == '\t' || s[i] == '\r' || s[i] == '\n')) ++i;
+    return i < n;
+}
+
+// 递归解析一个元素（含子元素与文本）。返回 false 表示输入非法。
+static bool xmlParseNode(const std::string& s, size_t& i, size_t n, XmlNode& node) {
+    if (!xmlSkipWs(s, i, n) || s[i] != '<') return false;
+    ++i;  // '<'
+    if (i < n && s[i] == '/') return false;  // 意外的闭合标签
+    size_t tagStart = i;
+    while (i < n && s[i] != '>' && s[i] != ' ' && s[i] != '\t' && s[i] != '\n' && s[i] != '/' && s[i] != '\r') ++i;
+    if (i >= n || i == tagStart) return false;
+    node.tag = s.substr(tagStart, i - tagStart);
+
+    bool selfClose = false;
+    // 属性
+    while (true) {
+        xmlSkipWs(s, i, n);
+        if (i >= n) return false;
+        if (s[i] == '>') { ++i; break; }
+        if (s[i] == '/') {
+            if (i + 1 < n && s[i + 1] == '>') { selfClose = true; i += 2; break; }
+            return false;
+        }
+        size_t kb = i;
+        while (i < n && s[i] != '=' && s[i] != ' ' && s[i] != '\t') ++i;
+        if (i >= n) return false;
+        std::string k = s.substr(kb, i - kb);
+        xmlSkipWs(s, i, n);
+        if (i >= n || s[i] != '=') return false;
+        ++i;  // '='
+        xmlSkipWs(s, i, n);
+        if (i >= n || (s[i] != '"' && s[i] != '\'')) return false;
+        char q = s[i];
+        ++i;
+        size_t vb = i;
+        while (i < n && s[i] != q) ++i;
+        if (i >= n) return false;
+        std::string v = s.substr(vb, i - vb);
+        ++i;  // 闭合引号
+        xmlUnescape(v);
+        node.attrs[k] = v;
+    }
+    if (selfClose) return true;
+
+    // 内容：文本与子元素
+    while (i < n) {
+        size_t lt = s.find('<', i);
+        if (lt == std::string::npos) { node.text += s.substr(i); i = n; break; }
+        std::string t = s.substr(i, lt - i);
+        xmlUnescape(t);
+        node.text += t;
+        i = lt;
+        if (i + 1 < n && s[i + 1] == '/') {
+            // 闭合标签
+            ++i; ++i;
+            size_t cStart = i;
+            while (i < n && s[i] != '>') ++i;
+            if (i >= n) return false;
+            std::string closeTag = s.substr(cStart, i - cStart);
+            ++i;
+            return closeTag == node.tag;
+        }
+        XmlNode child;
+        if (!xmlParseNode(s, i, n, child)) return false;
+        node.children.push_back(std::move(child));
+    }
+    return true;
+}
+
+static bool xmlParse(const std::string& s, XmlNode& root) {
+    size_t i = 0;
+    size_t n = s.size();
+    if (!xmlParseNode(s, i, n, root)) return false;
+    return true;
+}
+
 // ============================================================
 // 内置函数
 // ============================================================
@@ -2567,7 +2745,11 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
                       const std::shared_ptr<Env>& env) {
     auto ev = [&](size_t i) -> Value { return eval(args[i], env); };
     auto argc = [&]() -> size_t { return args.size(); };
-    static const std::unordered_map<std::string, int> g_bi = {{"up",1},{"down",2},{"len",3},{"sub",4},{"split",5},{"join",6},{"find",7},{"replace",8},{"append",9},{"pop",10},{"keys",11},{"values",12},{"type",13},{"args",14},{"fread",15},{"fwrite",16},{"fappend",17},{"fexists",18},{"exit",19},{"f",20},{"trim",21},{"startswith",22},{"endswith",23},{"lines",24},{"repeat",25},{"has_key",26},{"str",27},{"int",28},{"float",29},{"bool",30},{"char_at",31},{"sort",32},{"reverse",33},{"slice",34},{"map",35},{"filter",36},{"reduce",37},{"match",38},{"search",39},{"findall",40},{"gsub",41},{"ls",42},{"glob",43},{"stdin",44},{"ord",45},{"chr",46},{"is_digit",47},{"is_alpha",48},{"is_alnum",49},{"is_space",50},{"lstrip",51},{"rstrip",52},{"title",53},{"capitalize",54},{"count",55},{"rfind",56},{"min",57},{"max",58},{"sum",59},{"abs",60},{"round",61},{"pow",62},{"contains",63},{"mkdir",64},{"copy",65},{"rmdir",66},{"rename",67},{"getenv",68},{"setenv",69},{"cwd",70},{"chdir",71},{"regwrite",72},{"regdelete",73},{"shell",74},{"path_clean",75},{"regenv",146},{"cpdir",147},{"sqrt",76},{"floor",77},{"ceil",78},{"exp",79},{"log",80},{"log10",81},{"sin",82},{"cos",83},{"tan",84},{"sign",85},{"clamp",86},{"rand",87},{"randint",88},{"choice",89},{"shuffle",145},{"hex",90},{"bin",91},{"oct",92},{"pad",93},{"lpad",94},{"rpad",95},{"format",96},{"hash",97},{"range",98},{"first",99},{"last",100},{"take",101},{"drop",102},{"set",103},{"flatten",104},{"zip",105},{"insert",106},{"remove",107},{"index_of",108},{"enumerate",109},{"concat",110},{"get",111},{"items",112},{"pop_key",113},{"is_str",114},{"is_int",115},{"is_float",116},{"is_bool",117},{"is_list",118},{"is_dict",119},{"is_none",120},{"is_group",121},{"now",122},{"date",123},{"sleep",124},{"ticks",125},{"platform",126},{"temp_dir",127},{"fremove",128},{"fmove",129},{"fsize",130},{"is_dir",131},{"is_file",132},{"mkdirs",133},{"base64_encode",134},{"base64_decode",135},{"url_encode",136},{"url_decode",137},{"each",138},{"all",139},{"any",140},{"find_first",141},{"sort_by",142},{"throw",143},{"assert",144},{"thread",148},{"thread_join",149},{"thread_count",150},{"lock",151},{"unlock",152},{"http_get",153},{"http_post",154},{"tcp_ping",155},{"bin_read",156},{"bin_write",157},{"bin_hex",158},{"bin_unhex",159},{"bin_base64_encode",160},{"bin_base64_decode",161},{"json_encode",162},{"json_decode",163},{"re_groups",164},{"sha256",165},{"aes_encrypt",166},{"aes_decrypt",167},{"proc_run",168},{"ffi_call",169}};
+    static const std::unordered_map<std::string, int> g_bi = []{
+        std::unordered_map<std::string, int> m;
+        for (const auto& p : g_builtinNames) m[p.first] = p.second;
+        return m;
+    }();
     auto it = g_bi.find(name);
     if (it == g_bi.end()) throw VesnaError("未知内置 -" + name);
     switch (it->second) {
@@ -4164,6 +4346,118 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
         }
         return mkInt(r);
     }
+
+    case 170: {  // -csv_parse(s) -> [[字段,...],...]
+        Value v = ev(0);
+        if (v.t() != Value::T::STR) throw VesnaError("-csv_parse 需要字符串");
+        auto rows = csvParse(v.s());
+        Value out = mkList();
+        for (auto& row : rows) {
+            Value rv = mkList();
+            for (auto& f : row) rv.list()->items.push_back(mkStr(f));
+            out.list()->items.push_back(rv);
+        }
+        return out;
+    }
+    case 171: {  // -csv_build(rows) -> 字符串
+        Value v = ev(0);
+        if (v.t() != Value::T::LIST) throw VesnaError("-csv_build 需要列表");
+        std::vector<std::vector<std::string>> rows;
+        for (auto& rv : v.list()->items) {
+            if (rv.t() != Value::T::LIST) throw VesnaError("-csv_build 行必须是列表");
+            std::vector<std::string> row;
+            for (auto& f : rv.list()->items) {
+                if (f.t() != Value::T::STR) throw VesnaError("-csv_build 字段必须是字符串");
+                row.push_back(f.s());
+            }
+            rows.push_back(std::move(row));
+        }
+        return mkStr(csvBuild(rows));
+    }
+    case 172: {  // -ini_read(path) -> {section: {key: val}}
+        Value v = ev(0);
+        if (v.t() != Value::T::STR) throw VesnaError("-ini_read 需要路径");
+        std::string txt = readFileUtf8(v.s());
+        auto data = iniParse(txt);
+        Value out = mkDict();
+        for (auto& [sec, kv] : data) {
+            Value secV = mkDict();
+            for (auto& [k, val] : kv) dictSet(*secV.dict(), mkStr(k), mkStr(val));
+            dictSet(*out.dict(), mkStr(sec), secV);
+        }
+        return out;
+    }
+    case 173: {  // -ini_write(path; data) -> none
+        Value p = ev(0), d = ev(1);
+        if (p.t() != Value::T::STR || d.t() != Value::T::DICT)
+            throw VesnaError("-ini_write 需要路径与字典");
+        std::map<std::string, std::map<std::string, std::string>> data;
+        for (auto& [sk, sv] : d.dict()->pairs) {
+            if (sk.t() != Value::T::STR || sv.t() != Value::T::DICT)
+                throw VesnaError("-ini_write 字典结构必须是 {字符串: {字符串: 字符串}}");
+            std::map<std::string, std::string> kv;
+            for (auto& [kk, kvv] : sv.dict()->pairs) {
+                if (kk.t() != Value::T::STR || kvv.t() != Value::T::STR)
+                    throw VesnaError("-ini_write 键值必须是字符串");
+                kv[kk.s()] = kvv.s();
+            }
+            data[sk.s()] = std::move(kv);
+        }
+        writeFileUtf8(p.s(), iniBuild(data), false);
+        return mkNone();
+    }
+    case 174: {  // -xml_parse(s) -> {tag; attrs; children; text}（简易 DOM）
+        Value v = ev(0);
+        if (v.t() != Value::T::STR) throw VesnaError("-xml_parse 需要字符串");
+        XmlNode root;
+        if (!xmlParse(v.s(), root)) throw VesnaError("-xml_parse 无法解析 XML");
+        std::function<Value(const XmlNode&)> toVal = [&](const XmlNode& node) -> Value {
+            Value d = mkDict();
+            dictSet(*d.dict(), mkStr("tag"), mkStr(node.tag));
+            Value av = mkDict();
+            for (auto& [k, val] : node.attrs) dictSet(*av.dict(), mkStr(k), mkStr(val));
+            dictSet(*d.dict(), mkStr("attrs"), av);
+            Value cv = mkList();
+            for (auto& ch : node.children) cv.list()->items.push_back(toVal(ch));
+            dictSet(*d.dict(), mkStr("children"), cv);
+            dictSet(*d.dict(), mkStr("text"), mkStr(node.text));
+            return d;
+        };
+        return toVal(root);
+    }
+    case 175: {  // -ffi_call_s(dll; func; args...) -> 返回 char* 的字符串
+        Value d = ev(0), f = ev(1);
+        if (d.t() != Value::T::STR || f.t() != Value::T::STR)
+            throw VesnaError("-ffi_call_s 需要 DLL 与函数名字符串");
+        void* h = ffiLoad(d.s());
+        if (!h) throw VesnaError("-ffi_call_s 无法加载库: " + d.s());
+        void* fn = ffiSym(h, f.s());
+        if (!fn) throw VesnaError("-ffi_call_s 未找到符号: " + f.s());
+        int n = (int)argc() - 2;
+        if (n > 6) throw VesnaError("-ffi_call_s 最多 6 个参数");
+        std::vector<int64_t> p((size_t)n, 0);
+        std::vector<std::string> bufs;
+        for (int i = 0; i < n; ++i) {
+            Value a = ev(i + 2);
+            if (a.t() == Value::T::INT) p[(size_t)i] = a.i();
+            else if (a.t() == Value::T::STR) {
+                bufs.push_back(a.s());
+                p[(size_t)i] = (int64_t)(intptr_t)bufs.back().c_str();
+            } else throw VesnaError("-ffi_call_s 参数仅支持 int / 字符串");
+        }
+        const char* r = nullptr;
+        switch (n) {
+            case 0: r = ((const char*(*)())fn)(); break;
+            case 1: r = ((const char*(*)(int64_t))fn)(p[0]); break;
+            case 2: r = ((const char*(*)(int64_t,int64_t))fn)(p[0], p[1]); break;
+            case 3: r = ((const char*(*)(int64_t,int64_t,int64_t))fn)(p[0], p[1], p[2]); break;
+            case 4: r = ((const char*(*)(int64_t,int64_t,int64_t,int64_t))fn)(p[0], p[1], p[2], p[3]); break;
+            case 5: r = ((const char*(*)(int64_t,int64_t,int64_t,int64_t,int64_t))fn)(p[0], p[1], p[2], p[3], p[4]); break;
+            case 6: r = ((const char*(*)(int64_t,int64_t,int64_t,int64_t,int64_t,int64_t))fn)(p[0], p[1], p[2], p[3], p[4], p[5]); break;
+        }
+        return mkStr(r ? std::string(r) : "");
+    }
+
 
     }
     throw VesnaError("未知内置 -" + name);

@@ -2,6 +2,15 @@
 
 [English](CHANGELOG.md) | [中文](CHANGELOG.zh-CN.md)
 
+## 1.4.0
+
+### Added
+- **Native C++ LSP**: `vesna.exe --lsp` — a built-in Language Server (stdio JSON-RPC) with diagnostics (reuses the C++ `Parser` error collection), completion (all builtins from the single name table plus document identifiers, `#` trigger), hover (builtin/keyword docs + function defs), `documentSymbol` (functions) and `foldingRange` (indent blocks)
+- **VSCode extension 0.5.0**: `vesna-0.5.0.vsix` — server now spawns `vesna --lsp` (no Python dependency); the Python LSP server directory was removed
+- **Tier-4 builtins** (dispatch 170-175): `#csv_parse(s)` → row/field list, `#csv_build(rows)` → CSV text (RFC-4180 quoting), `#ini_read(path)` / `#ini_write(path; data)` (section/key/value, `;` `#` comments), `#xml_parse(s)` → simple DOM `{tag; attrs; children; text}` (attributes, nesting, self-closing tags, `&amp;` `&lt;` `&gt;` `&quot;` `&apos;`), `#ffi_call_s(dll; func; arg...)` → `char*` result as string
+- **CI fixes**: compile now links `-lws2_32` (1.1 networking builtins); golden regression extended with tier3 / binary / tier4; concurrency run check; vpm validation smoke; LSP smoke drives the compiled `vesna.exe --lsp`; `release.yml` aligned to 1.4.0 (`vesna-0.5.0.vsix`, `-lws2_32`, bilingual README/CHANGELOG/CONTRIBUTING + RELEASE-NOTES)
+- **Single source of truth for builtins**: the 175-entry name table `g_builtinNames` now drives the lexer's builtin set, the dispatch map, and LSP completion (previously three hand-maintained tables)
+
 ## 1.3.1
 
 ### Fixed

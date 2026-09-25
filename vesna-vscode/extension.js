@@ -4,11 +4,19 @@ const { LanguageClient, TransportKind } = require('vscode-languageclient/node');
 
 let client;
 
+function findVesnaExe() {
+    // 1) 显式配置
+    const cfg = vscode.workspace.getConfiguration('vesna');
+    const exe = cfg.get('executablePath');
+    if (exe && exe.length > 0) return exe;
+    // 2) PATH 中的 vesna
+    return 'vesna';
+}
+
 function activate(context) {
-    const serverModule = context.asAbsolutePath(path.join('server', 'server.py'));
     const serverOptions = {
-        run: { command: 'python', args: [serverModule], transport: TransportKind.stdio },
-        debug: { command: 'python', args: [serverModule], transport: TransportKind.stdio },
+        run: { command: findVesnaExe(), args: ['--lsp'], transport: TransportKind.stdio },
+        debug: { command: findVesnaExe(), args: ['--lsp'], transport: TransportKind.stdio },
     };
     const clientOptions = {
         documentSelector: [{ scheme: 'file', language: 'vesna' }],

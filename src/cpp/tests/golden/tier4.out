@@ -1,0 +1,16 @@
+﻿csv_parse rows= '3'
+row0= a|b|c
+row1= 1|x,y|3
+row2= he said "hi"|z|w
+csv_build lines= '2'
+csv_build= a|b|c~1|"x|y"|3~
+ini app.name= vesna
+ini user.lang= zh-CN
+ini build.date= 2026-09-25
+xml tag= root
+xml ver= 2
+xml text= hello 
+xml kids= '2'
+xml kid1 id= 1
+xml kid1 text= a
+xml kid2 text= b&c

@@ -179,6 +179,11 @@ int mainCli(int argc, char** argv) {
         }
     }
 
+    if (arg == "--lsp") {
+        runLsp();
+        return 0;
+    }
+
     if (arg == "--debug") {
         if (argc < 3) {
             std::cerr << "用法: vesna --debug <脚本.ves> [参数...]" << std::endl;
@@ -229,6 +234,7 @@ int mainCli(int argc, char** argv) {
                   << "  vesna --install              安装 Vesna\n"
                   << "  vesna --uninstall            卸载 Vesna（删目录+环境变量+注册表）\n"
                   << "  vesna --debug <脚本>         调试运行脚本（断点/单步/变量）\n"
+                  << "  vesna --lsp                  原生 LSP 服务器（stdio，编辑器集成）\n"
                   << "  vesna --pkg <命令>           包管理器（init/install/remove/list/search）\n"
                   << "  vesna --version              显示版本\n"
                   << "  vesna --help                 显示帮助\n";

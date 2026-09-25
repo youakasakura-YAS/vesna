@@ -208,6 +208,10 @@ struct Line {
 };
 
 std::vector<Line> preprocess(const std::string& src);
+// 内置函数注册表（名字 -> dispatch id），供 LSP 补全等复用
+extern const std::vector<std::pair<std::string, int>> g_builtinNames;
+// 原生 LSP 服务器（vesna.exe --lsp，stdio JSON-RPC）
+void runLsp();
 
 // ============================================================
 // 解析
