@@ -1,0 +1,39 @@
+{
+  "name": "vesna",
+  "publisher": "vesna",
+  "displayName": "Vesna",
+  "description": "Vesna 语言支持 — Scripts of spring",
+  "icon": "icon.png",
+  "version": "0.3.0",
+  "engines": { "vscode": "^1.60.0" },
+  "categories": ["Programming Languages"],
+  "activationEvents": ["onLanguage:vesna"],
+  "main": "./extension.js",
+  "dependencies": {
+    "vscode-languageclient": "^8.1.0"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "vesna",
+        "aliases": ["Vesna"],
+        "extensions": [".ves"],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/vesna-16.png",
+          "dark": "./icons/vesna-16.png"
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "vesna",
+        "scopeName": "source.vesna",
+        "path": "./syntaxes/vesna.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      { "language": "vesna", "path": "./snippets/vesna.json" }
+    ]
+  }
+}

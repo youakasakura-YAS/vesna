@@ -1,0 +1,26 @@
+import text,
+
+args = #args(),
+if #len(args) < '1'-
+-print("用法: vesna extract.ves <文件>"),
+-#exit('1'),
+
+content = #fread(args['1']),
+emails = text_extract_emails(content),
+urls = text_extract_urls(content),
+ips = text_extract_ips(content),
+
+print("=== 邮箱 ==="),
+for e in emails-
+-print("  " + e),
+
+print("=== URL ==="),
+for u in urls-
+-print("  " + u),
+
+print("=== IP ==="),
+for ip in ips-
+-print("  " + ip),
+
+print("=== 词数 ==="),
+print(#str(text_word_count(content))),

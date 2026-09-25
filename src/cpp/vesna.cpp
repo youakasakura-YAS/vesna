@@ -1,0 +1,2793 @@
+// vesna.cpp — Vesna 0.3.0 C++ 实现：词法 / 预处理 / 解析
+// 从 src/vesna.py 移植，保持语言语义一致
+#include "vesna.hpp"
+
+#include <algorithm>
+#include <charconv>
+#include <cmath>
+#include <cctype>
+#include <cstdio>
+#include <cstdlib>
+#include <cwchar>
+#include <direct.h>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <iterator>
+#include <regex>
+#include <set>
+#include <sstream>
+
+#ifndef _WIN32
+#error "Vesna C++ 版当前仅支持 Windows（使用 winreg / 宽字符 API）"
+#endif
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+
+namespace vesna {
+
+static std::string parentDir(const std::string& path);
+static std::string strFloat(double f);
+const std::string VERSION = "0.3.0";
+
+// ============================================================
+// 基础工具：UTF-8 <-> UTF-16
+// ============================================================
+static std::wstring utf8ToWide(const std::string& s) {
+    if (s.empty()) return L"";
+    int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
+    std::wstring out(n, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), &out[0], n);
+    return out;
+}
+
+static std::string wideToUtf8(const std::wstring& ws) {
+    if (ws.empty()) return "";
+    int n = WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), (int)ws.size(), nullptr, 0, nullptr, nullptr);
+    std::string out(n, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), (int)ws.size(), &out[0], n, nullptr, nullptr);
+    return out;
+}
+
+// ============================================================
+// 标识符 intern
+// ============================================================
+static std::unordered_map<std::string, int64_t> g_intern_map;
+static std::vector<std::string> g_intern_names;
+
+int64_t internId(const std::string& s) {
+    auto it = g_intern_map.find(s);
+    if (it != g_intern_map.end()) return it->second;
+    int64_t id = (int64_t)g_intern_names.size();
+    g_intern_map.emplace(s, id);
+    g_intern_names.push_back(s);
+    return id;
+}
+
+const std::string& internName(int64_t id) {
+    if (id >= 0 && id < (int64_t)g_intern_names.size()) return g_intern_names[(size_t)id];
+    static const std::string empty;
+    return empty;
+}
+
+// ============================================================
+// 值
+// ============================================================
+Value mkNone() { return Value(); }
+Value mkBool(bool b) { Value v; v.v = b; return v; }
+Value mkInt(int64_t i) { Value v; v.v = i; return v; }
+Value mkFloat(double f) { Value v; v.v = f; return v; }
+Value mkStr(std::string s) { Value v; v.v = std::move(s); return v; }
+Value mkList() { Value v; v.v = std::make_shared<ListVal>(); return v; }
+Value mkGroup() { Value v; v.v = std::make_shared<GroupVal>(); return v; }
+Value mkDict() { Value v; v.v = std::make_shared<DictVal>(); return v; }
+
+bool isNum(const Value& v) {
+    return v.t() == Value::T::INT || v.t() == Value::T::FLOAT;
+}
+
+bool vesnaEq(const Value& a, const Value& b) {
+    if (a.t() != b.t()) {
+        if (isNum(a) && isNum(b)) {
+            if (a.t() == Value::T::INT && b.t() == Value::T::INT) return a.i() == b.i();
+            double x = (a.t() == Value::T::INT) ? (double)a.i() : a.f();
+            double y = (b.t() == Value::T::INT) ? (double)b.i() : b.f();
+            return x == y;
+        }
+        return false;
+    }
+    switch (a.t()) {
+        case Value::T::NONE: return true;
+        case Value::T::BOOL: return a.b() == b.b();
+        case Value::T::INT: return a.i() == b.i();
+        case Value::T::FLOAT: return a.f() == b.f();
+        case Value::T::STR: return a.s() == b.s();
+        case Value::T::LIST:
+        case Value::T::GROUP: {
+            const auto& x = (a.t() == Value::T::LIST) ? a.list()->items : a.group()->items;
+            const auto& y = (b.t() == Value::T::LIST) ? b.list()->items : b.group()->items;
+            if (x.size() != y.size()) return false;
+            for (size_t i = 0; i < x.size(); ++i)
+                if (!vesnaEq(x[i], y[i])) return false;
+            return true;
+        }
+        case Value::T::DICT: {
+            const auto& x = a.dict()->pairs;
+            const auto& y = b.dict()->pairs;
+            if (x.size() != y.size()) return false;
+            for (const auto& p : x) {
+                bool found = false;
+                for (const auto& q : y)
+                    if (vesnaEq(p.first, q.first) && vesnaEq(p.second, q.second)) { found = true; break; }
+                if (!found) return false;
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
+bool truthy(const Value& v) {
+    switch (v.t()) {
+        case Value::T::NONE: return false;
+        case Value::T::BOOL: return v.b();
+        case Value::T::INT: return v.i() != 0;
+        case Value::T::FLOAT: return v.f() != 0.0;
+        case Value::T::STR: return !v.s().empty();
+        case Value::T::LIST: return !v.list()->items.empty();
+        case Value::T::GROUP: return !v.group()->items.empty();
+        case Value::T::DICT: return !v.dict()->pairs.empty();
+    }
+    return true;
+}
+
+// float 的字符串表示：整数化输出整数；否则最短表示（同 Python str()）
+static std::string floatToStr(double f) {
+    if (f == (double)(int64_t)f && std::abs(f) < 1e15) {
+        return std::to_string((int64_t)f);
+    }
+    char buf[64];
+    auto res = std::to_chars(buf, buf + sizeof(buf), f);
+    if (res.ec == std::errc()) return std::string(buf, res.ptr);
+    return std::to_string(f);
+}
+
+std::string fmt(const Value& v) {
+    switch (v.t()) {
+        case Value::T::NONE: return "none";
+        case Value::T::BOOL: return v.b() ? "true" : "false";
+        case Value::T::INT: return "'" + std::to_string(v.i()) + "'";
+        case Value::T::FLOAT: return "'" + floatToStr(v.f()) + "'";
+        case Value::T::STR: return v.s();
+        case Value::T::LIST: {
+            std::string out = "[";
+            for (size_t i = 0; i < v.list()->items.size(); ++i) {
+                if (i) out += ";";
+                out += fmt(v.list()->items[i]);
+            }
+            return out + "]";
+        }
+        case Value::T::GROUP: {
+            std::string out = "(";
+            for (size_t i = 0; i < v.group()->items.size(); ++i) {
+                if (i) out += ";";
+                out += fmt(v.group()->items[i]);
+            }
+            return out + ")";
+        }
+        case Value::T::DICT: {
+            std::string out = "{";
+            for (size_t i = 0; i < v.dict()->pairs.size(); ++i) {
+                if (i) out += ",";
+                out += fmt(v.dict()->pairs[i].first) + ":" + fmt(v.dict()->pairs[i].second);
+            }
+            return out + "}";
+        }
+    }
+    return "unknown";
+}
+
+std::string typeName(const Value& v) {
+    switch (v.t()) {
+        case Value::T::NONE: return "none";
+        case Value::T::BOOL: return "bool";
+        case Value::T::INT: return "int";
+        case Value::T::FLOAT: return "float";
+        case Value::T::STR: return "str";
+        case Value::T::LIST: return "list";
+        case Value::T::GROUP: return "group";
+        case Value::T::DICT: return "dict";
+    }
+    return "unknown";
+}
+
+// Dict 操作
+static std::pair<Value, Value>* dictFind(DictVal& d, const Value& k) {
+    for (auto& p : d.pairs)
+        if (vesnaEq(p.first, k)) return &p;
+    return nullptr;
+}
+static void dictSet(DictVal& d, const Value& k, const Value& v) {
+    for (auto& p : d.pairs) {
+        if (vesnaEq(p.first, k)) { p.second = v; return; }
+    }
+    d.pairs.emplace_back(k, v);
+}
+
+// ============================================================
+// 字符串工具
+// ============================================================
+static std::string toUpperAscii(const std::string& s) {
+    std::string out = s;
+    for (auto& c : out) if (c >= 'a' && c <= 'z') c -= 32;
+    return out;
+}
+static std::string toLowerAscii(const std::string& s) {
+    std::string out = s;
+    for (auto& c : out) if (c >= 'A' && c <= 'Z') c += 32;
+    return out;
+}
+
+static bool isNumberStr(const std::string& s) {
+    static const std::regex re(R"(-?\d+(\.\d+)?|-?\.\d+)");
+    return std::regex_match(s, re);
+}
+
+static std::string unescape(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    for (size_t i = 0; i < s.size(); ++i) {
+        if (s[i] == '\\' && i + 1 < s.size()) {
+            char c = s[i + 1];
+            switch (c) {
+                case 'n': out += '\n'; break;
+                case 't': out += '\t'; break;
+                case 'r': out += '\r'; break;
+                case '\\': out += '\\'; break;
+                case '"': out += '"'; break;
+                case '\'': out += '\''; break;
+                case '0': out += '\0'; break;
+                default: out += '\\'; out += c; break;
+            }
+            i += 1;
+        } else {
+            out += s[i];
+        }
+    }
+    return out;
+}
+
+// ============================================================
+// 文件系统（宽字符路径，兼容中文）
+// ============================================================
+// universal newlines：与 Python 文本模式一致（\\r\\n、\\r 均转 \\n）
+static std::string univNewlines(const std::string& in) {
+    std::string out;
+    out.reserve(in.size());
+    for (size_t i = 0; i < in.size(); ++i) {
+        char c = in[i];
+        if (c == '\r') {
+            out += '\n';
+            if (i + 1 < in.size() && in[i + 1] == '\n') ++i;
+        } else {
+            out += c;
+        }
+    }
+    return out;
+}
+
+// Windows 文本模式写入：\\n -> \\r\\n
+static std::string toWindowsNewlines(const std::string& in) {
+    if (in.find('\n') == std::string::npos) return in;
+    std::string out;
+    out.reserve(in.size() + 16);
+    for (char c : in) {
+        if (c == '\n') out += '\r';
+        out += c;
+    }
+    return out;
+}
+
+static std::string readFileUtf8(const std::string& path) {
+    std::wstring wp = utf8ToWide(path);
+    FILE* f = _wfopen(wp.c_str(), L"rb");
+    if (!f) throw VesnaError("-fread 失败: 无法打开 " + path);
+    std::string content;
+    char buf[8192];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), f)) > 0) content.append(buf, n);
+    fclose(f);
+    return univNewlines(content);
+}
+
+static void writeFileUtf8(const std::string& path, const std::string& content, bool append) {
+    std::wstring wp = utf8ToWide(path);
+    FILE* f = _wfopen(wp.c_str(), append ? L"ab" : L"wb");
+    if (!f) throw VesnaError("-fwrite 失败: 无法写入 " + path);
+    std::string out = toWindowsNewlines(content);
+    fwrite(out.data(), 1, out.size(), f);
+    fclose(f);
+}
+
+bool fileExists(const std::string& path) {
+    std::wstring wp = utf8ToWide(path);
+    DWORD attr = GetFileAttributesW(wp.c_str());
+    return attr != INVALID_FILE_ATTRIBUTES;
+}
+
+static bool isDirectory(const std::string& path) {
+    std::wstring wp = utf8ToWide(path);
+    DWORD attr = GetFileAttributesW(wp.c_str());
+    return attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+static void makeDirs(const std::string& path) {
+    std::wstring wp = utf8ToWide(path);
+    std::wstring cur;
+    size_t i = 0;
+    if (wp.size() >= 2 && wp[1] == L':') { cur = wp.substr(0, 3); i = 3; }  // 盘符
+    else if (wp.size() >= 1 && (wp[0] == L'/' || wp[0] == L'\\')) { cur = wp.substr(0, 1); i = 1; }
+    while (i < wp.size()) {
+        size_t j = wp.find_first_of(L"/\\", i);
+        std::wstring part = wp.substr(i, j == std::wstring::npos ? std::wstring::npos : j - i);
+        if (!part.empty()) {
+            if (!cur.empty() && cur.back() != L'\\' && cur.back() != L'/') cur += L'\\';
+            cur += part;
+            CreateDirectoryW(cur.c_str(), nullptr);
+        }
+        if (j == std::wstring::npos) break;
+        i = j + 1;
+    }
+}
+
+static std::vector<std::string> listDir(const std::string& path) {
+    std::vector<std::string> out;
+    std::wstring pattern = utf8ToWide(path);
+    if (!pattern.empty() && pattern.back() != L'\\' && pattern.back() != L'/') pattern += L'\\';
+    pattern += L'*';
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileW(pattern.c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE) throw VesnaError("-ls 失败: 无法打开目录 " + path);
+    do {
+        std::wstring name = fd.cFileName;
+        if (name != L"." && name != L"..") out.push_back(wideToUtf8(name));
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
+static void removeTree(const std::string& path) {
+    std::wstring wp = utf8ToWide(path);
+    DWORD attr = GetFileAttributesW(wp.c_str());
+    if (attr == INVALID_FILE_ATTRIBUTES) return;
+    if (attr & FILE_ATTRIBUTE_DIRECTORY) {
+        std::wstring pattern = wp + L"\\*";
+        WIN32_FIND_DATAW fd;
+        HANDLE h = FindFirstFileW(pattern.c_str(), &fd);
+        if (h != INVALID_HANDLE_VALUE) {
+            do {
+                std::wstring name = fd.cFileName;
+                if (name != L"." && name != L"..") {
+                    std::wstring child = wp + L"\\" + name;
+                    if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) removeTree(wideToUtf8(child));
+                    else DeleteFileW(child.c_str());
+                }
+            } while (FindNextFileW(h, &fd));
+            FindClose(h);
+        }
+        RemoveDirectoryW(wp.c_str());
+    } else {
+        DeleteFileW(wp.c_str());
+    }
+}
+
+static void copyPath(const std::string& src, const std::string& dst) {
+    std::wstring ws = utf8ToWide(src), wd = utf8ToWide(dst);
+    DWORD attr = GetFileAttributesW(ws.c_str());
+    if (attr == INVALID_FILE_ATTRIBUTES) throw VesnaError("-copy 源不存在: " + src);
+    if (attr & FILE_ATTRIBUTE_DIRECTORY) {
+        std::wstring pattern = ws + L"\\*";
+        WIN32_FIND_DATAW fd;
+        HANDLE h = FindFirstFileW(pattern.c_str(), &fd);
+        if (h == INVALID_HANDLE_VALUE) return;
+        do {
+            std::wstring name = fd.cFileName;
+            if (name != L"." && name != L"..") {
+                std::wstring childSrc = ws + L"\\" + name;
+                std::wstring childDst = wd + L"\\" + name;
+                if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+                    CreateDirectoryW(childDst.c_str(), nullptr);
+                    copyPath(wideToUtf8(childSrc), wideToUtf8(childDst));
+                } else {
+                    CopyFileW(childSrc.c_str(), childDst.c_str(), FALSE);
+                }
+            }
+        } while (FindNextFileW(h, &fd));
+        FindClose(h);
+    } else {
+        std::wstring parent = wd.substr(0, wd.find_last_of(L"/\\"));
+        if (!parent.empty()) CreateDirectoryW(parent.c_str(), nullptr);
+        if (!CopyFileW(ws.c_str(), wd.c_str(), FALSE))
+            throw VesnaError("-copy 失败: " + src);
+    }
+}
+
+// glob：目录 + 通配符匹配
+static bool fnmatchSimple(const std::string& pat, const std::string& name) {
+    // 支持 * 和 ?
+    std::regex re;
+    std::string reStr = "^";
+    for (char c : pat) {
+        if (c == '*') reStr += ".*";
+        else if (c == '?') reStr += ".";
+        else {
+            if (std::string(".+^$()[]{}|\\").find(c) != std::string::npos) reStr += '\\';
+            reStr += c;
+        }
+    }
+    reStr += "$";
+    return std::regex_match(name, std::regex(reStr));
+}
+
+static std::vector<std::string> globPaths(const std::string& pat) {
+    std::vector<std::string> out;
+    std::string dir, fname;
+    size_t slash = pat.find_last_of("/\\");
+    if (slash == std::string::npos) { dir = "."; fname = pat; }
+    else { dir = pat.substr(0, slash); fname = pat.substr(slash + 1); }
+    if (dir.empty()) dir = ".";
+    std::vector<std::string> entries;
+    try { entries = listDir(dir); } catch (...) { return out; }
+    for (const auto& e : entries) {
+        if (fnmatchSimple(fname, e)) {
+            std::string full = dir;
+            if (full.back() != '\\' && full.back() != '/') full += '\\';
+            full += e;
+            out.push_back(full);
+        }
+    }
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
+// ============================================================
+// 词法
+// ============================================================
+static const std::set<std::string> KEYWORDS = {
+    "if", "elif", "else", "while", "for", "in",
+    "def", "back", "break", "continue",
+    "try", "catch", "import", "and", "or", "not",
+};
+
+static const std::set<std::string> BUILTINS = {
+    "up", "down", "into", "f",
+    "len", "sub", "split", "join", "find", "replace",
+    "append", "pop", "keys", "values", "type",
+    "args", "fread", "fwrite", "fexists", "exit",
+    "trim", "startswith", "endswith", "lines", "repeat",
+    "sort", "reverse", "map", "filter", "reduce", "slice",
+    "match", "findall", "gsub", "search",
+    "ls", "glob", "fappend", "stdin",
+    "has_key",
+    "str", "int", "float", "bool",
+    "char_at", "ord", "chr",
+    "is_digit", "is_alpha", "is_alnum", "is_space",
+    "lstrip", "rstrip", "title", "capitalize",
+    "count", "rfind",
+    "min", "max", "sum", "abs", "round", "pow",
+    "contains",
+    "mkdir", "copy", "rmdir", "rename",
+    "getenv", "setenv", "cwd", "chdir",
+    "regwrite", "regdelete", "shell", "path_clean",
+};
+
+static const std::set<std::string> TYPE_KEYWORDS = {"int", "str", "float", "list", "dict", "bool"};
+
+std::vector<Token> lexExpr(const std::string& s, int ln) {
+    std::vector<Token> toks;
+    size_t i = 0;
+    size_t n = s.size();
+    while (i < n) {
+        char c = s[i];
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') { ++i; continue; }
+
+        // #f"..." 插值字符串
+        if (c == '#' && i + 2 < n && s[i + 1] == 'f' && s[i + 2] == '"') {
+            size_t j = i + 3;
+            std::string buf;
+            while (j < n && s[j] != '"') {
+                if (s[j] == '\\' && j + 1 < n) { buf += s[j]; buf += s[j + 1]; j += 2; }
+                else { buf += s[j]; ++j; }
+            }
+            if (j >= n) throw VesnaError("插值字符串未闭合", ln);
+            Token t; t.kind = TK_INTERP; t.value = unescape(buf); t.line = ln;
+            toks.push_back(std::move(t));
+            i = j + 1;
+            continue;
+        }
+
+        // #xxx 内置函数
+        if (c == '#' && i + 1 < n && (std::isalpha((unsigned char)s[i + 1]) || s[i + 1] == '_')) {
+            size_t j = i + 1;
+            while (j < n && (std::isalnum((unsigned char)s[j]) || s[j] == '_')) ++j;
+            std::string w = s.substr(i + 1, j - i - 1);
+            if (BUILTINS.count(w)) {
+                Token t; t.kind = TK_BUILTIN; t.value = w; t.line = ln;
+                toks.push_back(std::move(t));
+                i = j;
+                continue;
+            }
+        }
+
+        // 字符串
+        if (c == '"') {
+            size_t j = i + 1;
+            std::string buf;
+            while (j < n && s[j] != '"') {
+                if (s[j] == '\\' && j + 1 < n) { buf += s[j]; buf += s[j + 1]; j += 2; }
+                else { buf += s[j]; ++j; }
+            }
+            if (j >= n) throw VesnaError("字符串未闭合", ln);
+            Token t; t.kind = TK_STRING; t.value = unescape(buf); t.line = ln;
+            toks.push_back(std::move(t));
+            i = j + 1;
+            continue;
+        }
+
+        // 数字 '...'
+        if (c == '\'') {
+            size_t j = s.find('\'', i + 1);
+            if (j == std::string::npos) throw VesnaError("数字未闭合", ln);
+            std::string body = s.substr(i + 1, j - i - 1);
+            if (!isNumberStr(body)) throw VesnaError("无效数字: '" + body + "'", ln);
+            Token t; t.kind = TK_NUMBER; t.value = body; t.line = ln;
+            toks.push_back(std::move(t));
+            i = j + 1;
+            continue;
+        }
+
+        // 标识符 / 关键字
+        if (std::isalpha((unsigned char)c) || c == '_') {
+            size_t j = i;
+            while (j < n && (std::isalnum((unsigned char)s[j]) || s[j] == '_')) ++j;
+            std::string w = s.substr(i, j - i);
+            Token t; t.line = ln;
+            if (w == "true") { t.kind = TK_BOOL; t.bval = true; }
+            else if (w == "false") { t.kind = TK_BOOL; t.bval = false; }
+            else if (w == "none") { t.kind = TK_NONE; }
+            else if (w == "or") { t.kind = TK_OR; t.value = w; }
+            else if (w == "and") { t.kind = TK_AND; t.value = w; }
+            else if (w == "not") { t.kind = TK_NOT; t.value = w; }
+            else if (KEYWORDS.count(w)) { t.kind = TK_KW; t.value = w; }
+            else if (TYPE_KEYWORDS.count(w)) { t.kind = TK_TYPE; t.value = w; }
+            else { t.kind = TK_IDENT; t.value = w; }
+            toks.push_back(std::move(t));
+            i = j;
+            continue;
+        }
+
+        // 双字符
+        if (i + 1 < n) {
+            std::string two = s.substr(i, 2);
+            Token t; t.line = ln;
+            bool hit = true;
+            if (two == "+=") { t.kind = TK_PLUSEQ; t.value = "+"; }
+            else if (two == "-=") { t.kind = TK_MINUSEQ; t.value = "-"; }
+            else if (two == "*=") { t.kind = TK_STAREQ; t.value = "*"; }
+            else if (two == "/=") { t.kind = TK_SLASHEQ; t.value = "/"; }
+            else if (two == "./") { t.kind = TK_IDIV; t.value = "./"; }
+            else if (two == "/.") { t.kind = TK_FDIV; t.value = "/."; }
+            else if (two == "/-") { t.kind = TK_MOD; t.value = "/-"; }
+            else if (two == "==") { t.kind = TK_EQ; t.value = "=="; }
+            else if (two == "!=") { t.kind = TK_NE; t.value = "!="; }
+            else if (two == ">=") { t.kind = TK_GE; t.value = ">="; }
+            else if (two == "<=") { t.kind = TK_LE; t.value = "<="; }
+            else hit = false;
+            if (hit) { toks.push_back(std::move(t)); i += 2; continue; }
+        }
+
+        // 单字符
+        Token t; t.line = ln;
+        switch (c) {
+            case '+': t.kind = TK_PLUS; t.value = "+"; break;
+            case '-': t.kind = TK_MINUS; t.value = "-"; break;
+            case '*': t.kind = TK_STAR; t.value = "*"; break;
+            case '/': t.kind = TK_SLASH; t.value = "/"; break;
+            case '=': t.kind = TK_ASSIGN; t.value = "="; break;
+            case '<': t.kind = TK_LT; t.value = "<"; break;
+            case '>': t.kind = TK_GT; t.value = ">"; break;
+            case '(': t.kind = TK_LPAREN; t.value = "("; break;
+            case ')': t.kind = TK_RPAREN; t.value = ")"; break;
+            case '[': t.kind = TK_LBRACK; t.value = "["; break;
+            case ']': t.kind = TK_RBRACK; t.value = "]"; break;
+            case '{': t.kind = TK_LBRACE; t.value = "{"; break;
+            case '}': t.kind = TK_RBRACE; t.value = "}"; break;
+            case ',': t.kind = TK_COMMA; t.value = ","; break;
+            case ';': t.kind = TK_SEMI; t.value = ";"; break;
+            case ':': t.kind = TK_COLON; t.value = ":"; break;
+            default:
+                throw VesnaError(std::string("未知字符: ") + c, ln);
+        }
+        toks.push_back(std::move(t));
+        ++i;
+    }
+    Token eof; eof.kind = TK_EOF; eof.line = ln;
+    toks.push_back(std::move(eof));
+    return toks;
+}
+
+// ============================================================
+// 预处理
+// ============================================================
+static std::string extractVesna(const std::string& src) {
+    size_t i = src.find("<vesna>");
+    if (i == std::string::npos) return src;
+    size_t j = src.find("</vesna>", i);
+    if (j == std::string::npos) return src.substr(i + 7);
+    return src.substr(i + 7, j - (i + 7));
+}
+
+static std::string removeComments(const std::string& src) {
+    std::string out;
+    out.reserve(src.size());
+    size_t i = 0;
+    size_t n = src.size();
+    bool in_dq = false, escape = false;
+    while (i < n) {
+        char c = src[i];
+        if (in_dq) {
+            if (escape) escape = false;
+            else if (c == '\\') escape = true;
+            else if (c == '"') in_dq = false;
+            out += c;
+            ++i;
+            continue;
+        }
+        if (c == '"') { in_dq = true; out += c; ++i; continue; }
+        if (c == '/' && i + 1 < n && src[i + 1] == '*') {
+            size_t j = src.find("*/", i + 2);
+            if (j == std::string::npos) {
+                out.append(std::count(src.begin() + (std::ptrdiff_t)i, src.end(), '\n'), '\n');
+                break;
+            }
+            out.append(std::count(src.begin() + (std::ptrdiff_t)i,
+                                  src.begin() + (std::ptrdiff_t)(j + 2), '\n'), '\n');
+            i = j + 2;
+        } else {
+            out += c;
+            ++i;
+        }
+    }
+    return out;
+}
+
+static std::vector<std::pair<std::string, int>> splitLogicalLines(const std::string& src) {
+    std::vector<std::pair<std::string, int>> result;
+    std::string buf;
+    int buf_start = 1;
+    int depth_paren = 0, depth_brack = 0, depth_brace = 0;
+    bool in_dq = false, in_sq = false, escape = false;
+    int phys_no = 1;
+    for (char c : src) {
+        if (buf.empty()) buf_start = phys_no;
+        if (c == '\n') {
+            // 行结束：判断是否闭合
+            if (depth_paren > 0 || depth_brack > 0 || depth_brace > 0 || in_dq || in_sq)
+                buf += ' ';
+            else {
+                result.emplace_back(buf, buf_start);
+                buf.clear();
+            }
+            ++phys_no;
+            continue;
+        }
+        if (escape) { escape = false; buf += c; continue; }
+        if (in_dq) {
+            if (c == '\\') escape = true;
+            else if (c == '"') in_dq = false;
+            buf += c;
+            continue;
+        }
+        if (in_sq) {
+            if (c == '\'') in_sq = false;
+            buf += c;
+            continue;
+        }
+        if (c == '"') { in_dq = true; buf += c; }
+        else if (c == '\'') { in_sq = true; buf += c; }
+        else if (c == '(') { ++depth_paren; buf += c; }
+        else if (c == ')') { --depth_paren; buf += c; }
+        else if (c == '[') { ++depth_brack; buf += c; }
+        else if (c == ']') { --depth_brack; buf += c; }
+        else if (c == '{') { ++depth_brace; buf += c; }
+        else if (c == '}') { --depth_brace; buf += c; }
+        else buf += c;
+    }
+    if (!buf.empty()) result.emplace_back(buf, buf_start);
+    return result;
+}
+
+static std::vector<std::string> splitStatements(const std::string& text) {
+    std::vector<std::string> result;
+    std::string buf;
+    bool in_dq = false, in_sq = false, escape = false;
+    int depth = 0;
+    for (char c : text) {
+        if (escape) { escape = false; buf += c; continue; }
+        if (in_dq) {
+            if (c == '\\') escape = true;
+            else if (c == '"') in_dq = false;
+            buf += c;
+            continue;
+        }
+        if (in_sq) {
+            if (c == '\'') in_sq = false;
+            buf += c;
+            continue;
+        }
+        if (c == '"') { in_dq = true; buf += c; continue; }
+        if (c == '\'') { in_sq = true; buf += c; continue; }
+        if (c == '(' || c == '[' || c == '{') { ++depth; buf += c; continue; }
+        if (c == ')' || c == ']' || c == '}') { --depth; buf += c; continue; }
+        if (c == ',' && depth == 0) { result.push_back(buf); buf.clear(); continue; }
+        buf += c;
+    }
+    if (!buf.empty()) result.push_back(buf);
+    return result;
+}
+
+std::vector<Line> preprocess(const std::string& src) {
+    std::string s = removeComments(extractVesna(src));
+    std::vector<Line> lines;
+    for (const auto& [text, phys_no] : splitLogicalLines(s)) {
+        for (std::string& stmtRaw : splitStatements(text)) {
+            std::string st = stmtRaw;
+            // 去首尾空白
+            size_t b = st.find_first_not_of(" \t\r\n");
+            if (b == std::string::npos) continue;
+            size_t e = st.find_last_not_of(" \t\r\n");
+            st = st.substr(b, e - b + 1);
+
+            int indent = 0;
+            while (!st.empty() && st[0] == '-') { ++indent; st = st.substr(1); }
+            b = st.find_first_not_of(" \t\r\n");
+            if (b != std::string::npos) st = st.substr(b);
+            else st.clear();
+
+            bool block_start = false;
+            if (!st.empty() && st.back() == '-') {
+                block_start = true;
+                st.pop_back();
+                size_t e2 = st.find_last_not_of(" \t\r\n");
+                if (e2 == std::string::npos) st.clear();
+                else st = st.substr(0, e2 + 1);
+            }
+            if (!st.empty()) {
+                Line ln;
+                ln.indent = indent;
+                ln.content = st;
+                ln.block_start = block_start;
+                ln.line_no = phys_no;
+                lines.push_back(std::move(ln));
+            }
+        }
+    }
+    return lines;
+}
+
+// ============================================================
+// 表达式解析
+// ============================================================
+static std::string binopName(const std::string& sym) {
+    if (sym == "+") return "PLUS";
+    if (sym == "-") return "MINUS";
+    if (sym == "*") return "STAR";
+    if (sym == "/") return "SLASH";
+    if (sym == "==") return "==";
+    if (sym == "!=") return "!=";
+    if (sym == "<") return "LT";
+    if (sym == ">") return "GT";
+    if (sym == "<=") return "<=";
+    if (sym == ">=") return ">=";
+    return sym;
+}
+
+class ExprParser {
+    const std::vector<Token>& toks;
+    size_t pos = 0;
+
+    const Token& peek() { return toks[pos]; }
+    const Token& advance() { return toks[pos++]; }
+    const Token& expect(TokKind k) {
+        const Token& t = peek();
+        if (t.kind != k) throw VesnaError("期望 " + tokKindName(k) + "，实际 " + tokKindName(t.kind), t.line);
+        return advance();
+    }
+    static std::string tokKindName(TokKind k) {
+        switch (k) {
+            case TK_EOF: return "EOF";
+            case TK_RPAREN: return "RPAREN";
+            case TK_SEMI: return "SEMI";
+            case TK_COLON: return "COLON";
+            case TK_TYPE: return "TYPE";
+            default: return "TOKEN";
+        }
+    }
+
+public:
+    explicit ExprParser(const std::vector<Token>& t) : toks(t) {}
+
+    // 左值解析（赋值目标：变量名 [下标]）
+    std::shared_ptr<Expr> parseLValue() {
+        const Token& t = peek();
+        if (t.kind != TK_IDENT) throw VesnaError("赋值左侧必须是变量", t.line);
+        std::string name = t.value;
+        advance();
+        if (peek().kind == TK_LBRACK) {
+            advance();
+            auto idx = parse();
+            expect(TK_RBRACK);
+            auto e = std::make_shared<Expr>(); e->k = Expr::K::INDEX; e->str = name; e->nid = internId(name); e->b = idx;
+            e->a = nullptr;
+            return e;
+        }
+        auto e = std::make_shared<Expr>(); e->k = Expr::K::VAR; e->str = name; e->nid = internId(name);
+        return e;
+    }
+
+    std::shared_ptr<Expr> parseStatement() {
+        auto e = parse();
+        if (peek().kind != TK_EOF)
+            throw VesnaError("表达式后有多余内容: " + (peek().value.empty() ? tokKindName(peek().kind) : peek().value), peek().line);
+        return e;
+    }
+
+    std::shared_ptr<Expr> parse() { return orExpr(); }
+
+private:
+    std::shared_ptr<Expr> orExpr() {
+        auto l = andExpr();
+        while (peek().kind == TK_OR) {
+            advance();
+            auto r = andExpr();
+            auto e = std::make_shared<Expr>(); e->k = Expr::K::OR; e->a = l; e->b = r;
+            l = e;
+        }
+        return l;
+    }
+
+    std::shared_ptr<Expr> andExpr() {
+        auto l = notExpr();
+        while (peek().kind == TK_AND) {
+            advance();
+            auto r = notExpr();
+            auto e = std::make_shared<Expr>(); e->k = Expr::K::AND; e->a = l; e->b = r;
+            l = e;
+        }
+        return l;
+    }
+
+    std::shared_ptr<Expr> notExpr() {
+        if (peek().kind == TK_NOT) {
+            advance();
+            auto e = std::make_shared<Expr>(); e->k = Expr::K::NOT; e->a = notExpr();
+            return e;
+        }
+        return comparison();
+    }
+
+    std::shared_ptr<Expr> comparison() {
+        auto l = additive();
+        while (peek().kind == TK_EQ || peek().kind == TK_NE || peek().kind == TK_LT ||
+               peek().kind == TK_GT || peek().kind == TK_LE || peek().kind == TK_GE) {
+            std::string op = binopName(advance().value);
+            auto r = additive();
+            auto e = std::make_shared<Expr>(); e->k = Expr::K::BIN; e->op = op; e->a = l; e->b = r;
+            l = e;
+        }
+        return l;
+    }
+
+    std::shared_ptr<Expr> additive() {
+        auto l = mul();
+        while (peek().kind == TK_PLUS || peek().kind == TK_MINUS) {
+            std::string op = binopName(advance().value);
+            auto r = mul();
+            auto e = std::make_shared<Expr>(); e->k = Expr::K::BIN; e->op = op; e->a = l; e->b = r;
+            l = e;
+        }
+        return l;
+    }
+
+    std::shared_ptr<Expr> mul() {
+        auto l = unary();
+        while (peek().kind == TK_STAR || peek().kind == TK_SLASH || peek().kind == TK_IDIV ||
+               peek().kind == TK_FDIV || peek().kind == TK_MOD) {
+            std::string op = binopName(advance().value);
+            auto r = unary();
+            auto e = std::make_shared<Expr>(); e->k = Expr::K::BIN; e->op = op; e->a = l; e->b = r;
+            l = e;
+        }
+        return l;
+    }
+
+    std::shared_ptr<Expr> unary() {
+        if (peek().kind == TK_MINUS) {
+            advance();
+            auto e = std::make_shared<Expr>(); e->k = Expr::K::NEG; e->a = unary();
+            return e;
+        }
+        return postfix();
+    }
+
+    std::shared_ptr<Expr> postfix() {
+        auto e = primary();
+        while (peek().kind == TK_LBRACK) {
+            advance();
+            auto idx = parse();
+            expect(TK_RBRACK);
+            auto n = std::make_shared<Expr>(); n->k = Expr::K::INDEX; n->a = e; n->b = idx;
+            e = n;
+        }
+        return e;
+    }
+
+    std::shared_ptr<Expr> primary() {
+        const Token& t = peek();
+
+        if (t.kind == TK_NUMBER) {
+            advance();
+            auto e = std::make_shared<Expr>();
+            e->k = Expr::K::NUM;
+            if (t.value.find('.') != std::string::npos) { e->is_float = true; e->fnum = std::stod(t.value); }
+            else { e->is_float = false; e->inum = std::stoll(t.value); }
+            return e;
+        }
+        if (t.kind == TK_STRING) {
+            advance();
+            auto e = std::make_shared<Expr>(); e->k = Expr::K::STR; e->str = t.value;
+            return e;
+        }
+        if (t.kind == TK_BOOL) {
+            advance();
+            auto e = std::make_shared<Expr>(); e->k = Expr::K::BOOL; e->bval = t.bval;
+            return e;
+        }
+        if (t.kind == TK_NONE) {
+            advance();
+            auto e = std::make_shared<Expr>(); e->k = Expr::K::NONE; return e;
+        }
+        if (t.kind == TK_INTERP) {
+            advance();
+            auto e = std::make_shared<Expr>(); e->k = Expr::K::INTERP; e->str = t.value;
+            return e;
+        }
+
+        if (t.kind == TK_BUILTIN) {
+            std::string name = t.value;
+            advance();
+            expect(TK_LPAREN);
+            auto e = std::make_shared<Expr>();
+            if (name == "into") {
+                const Token& tt = peek();
+                if (tt.kind != TK_TYPE) throw VesnaError("-into 第一个参数必须是类型关键字", tt.line);
+                advance();
+                expect(TK_SEMI);
+                e->k = Expr::K::INTO; e->str = tt.value; e->a = parse();
+                expect(TK_RPAREN);
+                return e;
+            }
+            if (name == "args") {
+                expect(TK_RPAREN);
+                e->k = Expr::K::BUILTIN; e->str = name;
+                return e;
+            }
+            e->k = Expr::K::BUILTIN;
+            e->str = name;
+            if (peek().kind != TK_RPAREN) {
+                e->args.push_back(parse());
+                while (peek().kind == TK_SEMI) {
+                    advance();
+                    e->args.push_back(parse());
+                }
+            }
+            expect(TK_RPAREN);
+            return e;
+        }
+
+        if (t.kind == TK_IDENT) {
+            std::string name = t.value;
+            advance();
+            if (peek().kind == TK_LPAREN) {
+                advance();
+                auto e = std::make_shared<Expr>(); e->k = Expr::K::CALL; e->str = name; e->nid = internId(name);
+                if (peek().kind != TK_RPAREN) {
+                    e->args.push_back(parse());
+                    while (peek().kind == TK_SEMI) {
+                        advance();
+                        e->args.push_back(parse());
+                    }
+                }
+                expect(TK_RPAREN);
+                return e;
+            }
+            auto e = std::make_shared<Expr>(); e->k = Expr::K::VAR; e->str = name; e->nid = internId(name);
+            return e;
+        }
+
+        if (t.kind == TK_LPAREN) {
+            advance();
+            auto first = parse();
+            if (peek().kind == TK_SEMI) {
+                auto e = std::make_shared<Expr>(); e->k = Expr::K::GROUP;
+                e->args.push_back(first);
+                while (peek().kind == TK_SEMI) {
+                    advance();
+                    e->args.push_back(parse());
+                }
+                expect(TK_RPAREN);
+                return e;
+            }
+            expect(TK_RPAREN);
+            return first;
+        }
+
+        if (t.kind == TK_LBRACK) {
+            advance();
+            auto e = std::make_shared<Expr>(); e->k = Expr::K::LIST;
+            if (peek().kind != TK_RBRACK) {
+                e->args.push_back(parse());
+                while (peek().kind == TK_SEMI) {
+                    advance();
+                    e->args.push_back(parse());
+                }
+            }
+            expect(TK_RBRACK);
+            return e;
+        }
+
+        if (t.kind == TK_LBRACE) {
+            advance();
+            auto e = std::make_shared<Expr>(); e->k = Expr::K::DICT;
+            if (peek().kind != TK_RBRACE) {
+                auto k = parse();
+                expect(TK_COLON);
+                auto v = parse();
+                e->pairs.emplace_back(k, v);
+                while (peek().kind == TK_SEMI) {
+                    advance();
+                    auto k2 = parse();
+                    expect(TK_COLON);
+                    auto v2 = parse();
+                    e->pairs.emplace_back(k2, v2);
+                }
+            }
+            expect(TK_RBRACE);
+            return e;
+        }
+
+        throw VesnaError("表达式不完整（可能是括号未闭合），实际 " + tokKindName(t.kind), t.line);
+    }
+};
+
+std::shared_ptr<Expr> parseExpr(const std::string& s, int ln) {
+    return ExprParser(lexExpr(s, ln)).parseStatement();
+}
+
+// ============================================================
+// 语句解析
+// ============================================================
+// 将语句行解析为 AST（Parser::parse 内部使用）
+// Parser::parse —— 顶层语句列表
+std::vector<std::shared_ptr<Stmt>> Parser::parse() {
+    std::vector<std::shared_ptr<Stmt>> out;
+    while (pos < lines.size()) {
+        auto s = stmt(0);
+        if (!s) break;
+        out.push_back(s);
+    }
+    return out;
+}
+
+std::shared_ptr<Stmt> Parser::stmt(int min_indent) {
+    if (pos >= lines.size()) return nullptr;
+    const Line& ln = lines[pos];
+    if (ln.indent < min_indent) return nullptr;
+    size_t start = pos;
+    try {
+        return stmtInner(min_indent);
+    } catch (VesnaError& e) {
+        if (pos <= start) pos = start + 1;
+        int line = e.line >= 0 ? e.line : ln.line_no;
+        errors.emplace_back(line, e.msg);
+        auto st = std::make_shared<Stmt>();
+        st->k = Stmt::K::ERR;
+        st->err_msg = e.msg;
+        st->err_line = line;
+        return st;
+    }
+}
+
+static std::string trimStr(std::string s) {
+    size_t b = s.find_first_not_of(" \t\r\n");
+    if (b == std::string::npos) return "";
+    size_t e = s.find_last_not_of(" \t\r\n");
+    return s.substr(b, e - b + 1);
+}
+
+std::shared_ptr<Stmt> Parser::stmtInner(int min_indent) {
+    (void)min_indent;
+    Line& ln = lines[pos];
+    const std::string& c = ln.content;
+
+    if (c.rfind("if ", 0) == 0 && ln.block_start) return parseIf(ln);
+    if (c.rfind("while ", 0) == 0 && ln.block_start) return parseWhile(ln);
+    if (c.rfind("for ", 0) == 0 && ln.block_start) return parseFor(ln);
+    if (c.rfind("def ", 0) == 0 && ln.block_start) return parseDef(ln);
+    if (c == "try" && ln.block_start) return parseTry(ln);
+    if (c.rfind("import ", 0) == 0) {
+        ++pos;
+        auto st = std::make_shared<Stmt>();
+        st->k = Stmt::K::IMPORT;
+        st->import_name = trimStr(c.substr(7));
+        return st;
+    }
+
+    ++pos;
+
+    if (c == "break") {
+        auto st = std::make_shared<Stmt>(); st->k = Stmt::K::BREAK; return st;
+    }
+    if (c == "continue") {
+        auto st = std::make_shared<Stmt>(); st->k = Stmt::K::CONTINUE; return st;
+    }
+    if (c.rfind("back(", 0) == 0 && !c.empty() && c.back() == ')') {
+        auto st = std::make_shared<Stmt>();
+        st->k = Stmt::K::BACK;
+        st->expr = parseExpr(c.substr(5, c.size() - 6), ln.line_no);
+        return st;
+    }
+
+    return parseSimple(c, ln.line_no);
+}
+
+std::shared_ptr<Stmt> Parser::parseIf(const Line& ln) {
+    auto cond = parseExpr(ln.content.substr(3), ln.line_no);
+    ++pos;
+    std::vector<std::pair<std::shared_ptr<Expr>, std::vector<std::shared_ptr<Stmt>>>> branches;
+    auto cur_cond = cond;
+    std::vector<std::shared_ptr<Stmt>> cur_body;
+    while (true) {
+        while (pos < lines.size()) {
+            const Line& nxt = lines[pos];
+            if (nxt.indent != ln.indent + 1) break;
+            auto s = stmt(ln.indent + 1);
+            if (s) cur_body.push_back(s);
+            else break;
+        }
+        if (pos >= lines.size()) break;
+        const Line& nxt = lines[pos];
+        if (nxt.indent != ln.indent) break;
+        const std::string& c = nxt.content;
+        if (c.rfind("elif ", 0) == 0) {
+            branches.emplace_back(cur_cond, cur_body);
+            cur_cond = parseExpr(c.substr(5), nxt.line_no);
+            cur_body.clear();
+            ++pos;
+        } else if (c == "else") {
+            branches.emplace_back(cur_cond, cur_body);
+            cur_cond = nullptr;
+            cur_body.clear();
+            ++pos;
+        } else {
+            break;
+        }
+    }
+    branches.emplace_back(cur_cond, cur_body);
+    auto st = std::make_shared<Stmt>();
+    st->k = Stmt::K::IF;
+    st->branches = std::move(branches);
+    return st;
+}
+
+std::shared_ptr<Stmt> Parser::parseWhile(const Line& ln) {
+    auto cond = parseExpr(ln.content.substr(6), ln.line_no);
+    ++pos;
+    auto st = std::make_shared<Stmt>();
+    st->k = Stmt::K::WHILE;
+    st->cond = cond;
+    while (pos < lines.size()) {
+        const Line& nxt = lines[pos];
+        if (nxt.indent != ln.indent + 1) break;
+        auto s = stmt(ln.indent + 1);
+        if (s) st->body.push_back(s);
+    }
+    return st;
+}
+
+std::shared_ptr<Stmt> Parser::parseFor(const Line& ln) {
+    static const std::regex re(R"(^for\s+(\w+)\s+in\s+(.+)$)");
+    std::smatch m;
+    if (!std::regex_match(ln.content, m, re))
+        throw VesnaError("for 语法错误，应为: for 变量 in 表达式-", ln.line_no);
+    auto st = std::make_shared<Stmt>();
+    st->k = Stmt::K::FOR;
+    st->var = m[1].str();
+    st->var_nid = internId(st->var);
+    st->cond = parseExpr(m[2].str(), ln.line_no);
+    ++pos;
+    while (pos < lines.size()) {
+        const Line& nxt = lines[pos];
+        if (nxt.indent != ln.indent + 1) break;
+        auto s = stmt(ln.indent + 1);
+        if (s) st->body.push_back(s);
+    }
+    return st;
+}
+
+static std::vector<std::pair<int64_t, std::shared_ptr<Expr>>> splitParams(const std::string& s, int ln) {
+    std::vector<std::pair<int64_t, std::shared_ptr<Expr>>> out;
+    std::string t = trimStr(s);
+    if (t.empty()) return out;
+    std::vector<std::string> parts;
+    int depth = 0;
+    std::string cur;
+    for (char ch : t) {
+        if (ch == '(' || ch == '[' || ch == '{') { ++depth; cur += ch; }
+        else if (ch == ')' || ch == ']' || ch == '}') { --depth; cur += ch; }
+        else if (ch == ';' && depth == 0) { parts.push_back(trimStr(cur)); cur.clear(); }
+        else cur += ch;
+    }
+    if (!cur.empty()) parts.push_back(trimStr(cur));
+    for (const auto& p : parts) {
+        size_t eq = p.find('=');
+        if (eq != std::string::npos) {
+            std::string name = trimStr(p.substr(0, eq));
+            std::string def = trimStr(p.substr(eq + 1));
+            out.emplace_back(internId(name), parseExpr(def, ln));
+        } else {
+            out.emplace_back(internId(p), nullptr);
+        }
+    }
+    return out;
+}
+
+std::shared_ptr<Stmt> Parser::parseDef(const Line& ln) {
+    static const std::regex re(R"(^def\s+(\w+)\s*\((.*)\)\s*$)");
+    std::smatch m;
+    if (!std::regex_match(ln.content, m, re))
+        throw VesnaError("def 语法错误", ln.line_no);
+    auto st = std::make_shared<Stmt>();
+    st->k = Stmt::K::DEF;
+    st->fname = m[1].str();
+    st->params = splitParams(m[2].str(), ln.line_no);
+    ++pos;
+    while (pos < lines.size()) {
+        const Line& nxt = lines[pos];
+        if (nxt.indent != ln.indent + 1) break;
+        auto s = stmt(ln.indent + 1);
+        if (s) st->body.push_back(s);
+    }
+    return st;
+}
+
+std::shared_ptr<Stmt> Parser::parseTry(const Line& ln) {
+    ++pos;
+    auto st = std::make_shared<Stmt>();
+    st->k = Stmt::K::TRY;
+    while (pos < lines.size()) {
+        const Line& nxt = lines[pos];
+        if (nxt.indent != ln.indent + 1) break;
+        if (nxt.content.rfind("catch ", 0) == 0) break;
+        auto s = stmt(ln.indent + 1);
+        if (s) st->try_body.push_back(s);
+    }
+    if (pos >= lines.size() || lines[pos].content.rfind("catch ", 0) != 0)
+        throw VesnaError("try 需要 catch", ln.line_no);
+    const Line& catch_line = lines[pos];
+    static const std::regex re(R"(^catch\s+(\w+)\s*$)");
+    std::smatch m;
+    if (!std::regex_match(catch_line.content, m, re))
+        throw VesnaError("catch 语法错误，应为: catch 变量", catch_line.line_no);
+    st->catch_nid = internId(m[1].str());
+    ++pos;
+    while (pos < lines.size()) {
+        const Line& nxt = lines[pos];
+        if (nxt.indent != ln.indent + 1) break;
+        auto s = stmt(ln.indent + 1);
+        if (s) st->catch_body.push_back(s);
+    }
+    return st;
+}
+
+std::shared_ptr<Stmt> Parser::parseSimple(const std::string& content, int ln_no) {
+    auto toks = lexExpr(content, ln_no);
+    int depth = 0;
+    int op_pos = -1;
+    std::string op_kind;
+    for (size_t i = 0; i < toks.size(); ++i) {
+        TokKind k = toks[i].kind;
+        if (k == TK_LPAREN || k == TK_LBRACK || k == TK_LBRACE) ++depth;
+        else if (k == TK_RPAREN || k == TK_RBRACK || k == TK_RBRACE) --depth;
+        else if (depth == 0 && (k == TK_ASSIGN || k == TK_PLUSEQ || k == TK_MINUSEQ ||
+                                k == TK_STAREQ || k == TK_SLASHEQ)) {
+            op_pos = (int)i;
+            op_kind = (k == TK_ASSIGN) ? "ASSIGN" : toks[i].value;
+            break;
+        }
+    }
+    auto st = std::make_shared<Stmt>();
+    if (op_pos >= 0) {
+        std::vector<Token> left(toks.begin(), toks.begin() + op_pos);
+        Token eof; eof.kind = TK_EOF; eof.line = ln_no;
+        left.push_back(eof);
+        std::vector<Token> right(toks.begin() + op_pos + 1, toks.end());
+        auto lv = ExprParser(left).parseLValue();
+        st->k = Stmt::K::ASSIGN;
+        st->op_kind = op_kind;
+        st->val = ExprParser(right).parseStatement();
+        st->lv_name = lv->str;
+        st->lv_nid = lv->nid;
+        st->lv_idx = (lv->k == Expr::K::INDEX) ? lv->b : nullptr;
+        return st;
+    }
+    st->k = Stmt::K::EXPR;
+    st->expr = ExprParser(toks).parseStatement();
+    return st;
+}
+
+// ============================================================
+// 环境
+// ============================================================
+const Value* Env::getRef(int64_t nid) const {
+    auto it = vars.find(nid);
+    if (it != vars.end()) return &it->second;
+    if (parent) return parent->getRef(nid);
+    return nullptr;
+}
+
+void Env::set(int64_t nid, const Value& v) {
+    vars[nid] = v;
+}
+
+std::shared_ptr<Function> Env::getFunc(int64_t nid) const {
+    auto it = funcs.find(nid);
+    if (it != funcs.end()) return it->second;
+    if (parent) return parent->getFunc(nid);
+    throw VesnaError("未定义函数: " + internName(nid));
+}
+
+void Env::setFunc(int64_t nid, const std::shared_ptr<Function>& fn) {
+    funcs[nid] = fn;
+}
+
+// ============================================================
+// 运行时：数值运算辅助
+// ============================================================
+static const std::unordered_map<std::string, std::string> COMPOUND_OP = {
+    {"+", "PLUS"}, {"-", "MINUS"}, {"*", "STAR"}, {"/", "SLASH"},
+};
+
+static Value numArith(const Value& l, const Value& r, char op) {
+    bool fl = l.t() == Value::T::FLOAT, fr = r.t() == Value::T::FLOAT;
+    if (!fl && !fr) {
+        int64_t a = l.i(), b = r.i();
+        switch (op) {
+            case '+': return mkInt(a + b);
+            case '-': return mkInt(a - b);
+            case '*': return mkInt(a * b);
+        }
+    }
+    double a = fl ? l.f() : (double)l.i();
+    double b = fr ? r.f() : (double)r.i();
+    switch (op) {
+        case '+': return mkFloat(a + b);
+        case '-': return mkFloat(a - b);
+        case '*': return mkFloat(a * b);
+    }
+    return mkNone();
+}
+
+static void numOnly(const Value& a, const Value& b) {
+    if (a.t() == Value::T::BOOL || b.t() == Value::T::BOOL) throw VesnaError("该运算符需要数字");
+    if (!isNum(a) || !isNum(b)) throw VesnaError("该运算符需要数字");
+}
+
+// 比较运算符要求可比较（数字或同类型），否则报错
+static void numOnlyCmp(const Value& a, const Value& b) {
+    if (isNum(a) && isNum(b)) return;
+    if (a.t() != b.t()) throw VesnaError("无法比较: " + fmt(a) + " 和 " + fmt(b));
+    if (a.t() != Value::T::STR && a.t() != Value::T::BOOL)
+        throw VesnaError("无法比较: " + fmt(a) + " 和 " + fmt(b));
+}
+
+static double numVal(const Value& v) {
+    return v.t() == Value::T::INT ? (double)v.i() : v.f();
+}
+
+static int64_t pyModInt(int64_t a, int64_t b) {
+    int64_t r = a % b;
+    if (r != 0 && ((r < 0) != (b < 0))) r += b;
+    return r;
+}
+
+static double pyModFloat(double a, double b) {
+    double r = std::fmod(a, b);
+    if (r != 0.0 && ((r < 0) != (b < 0))) r += b;
+    return r;
+}
+
+// ============================================================
+// 运行时：Interp
+// ============================================================
+void Interp::run(const std::vector<std::shared_ptr<Stmt>>& program) {
+    for (auto& s : program) exec(s, g);
+}
+
+void Interp::exec(const std::shared_ptr<Stmt>& stmt, const std::shared_ptr<Env>& env) {
+    switch (stmt->k) {
+        case Stmt::K::ASSIGN:
+            assign(stmt->lv_nid, stmt->lv_idx, stmt->op_kind, eval(stmt->val, env), env);
+            break;
+
+        case Stmt::K::EXPR:
+            eval(stmt->expr, env);
+            break;
+
+        case Stmt::K::BACK:
+            throw ReturnSignal(eval(stmt->expr, env));
+
+        case Stmt::K::BREAK:
+            throw BreakSignal();
+
+        case Stmt::K::CONTINUE:
+            throw ContinueSignal();
+
+        case Stmt::K::IF: {
+            for (auto& [cond, body] : stmt->branches) {
+                if (!cond || truthy(eval(cond, env))) {
+                    for (auto& s : body) exec(s, env);
+                    break;
+                }
+            }
+            break;
+        }
+
+        case Stmt::K::WHILE: {
+            while (truthy(eval(stmt->cond, env))) {
+                try {
+                    for (auto& s : stmt->body) exec(s, env);
+                } catch (BreakSignal&) {
+                    break;
+                } catch (ContinueSignal&) {
+                    continue;
+                }
+            }
+            break;
+        }
+
+        case Stmt::K::FOR: {
+            Value iterable = eval(stmt->cond, env);
+            std::vector<Value> items;
+            if (iterable.t() == Value::T::DICT) {
+                for (auto& p : iterable.dict()->pairs) items.push_back(p.first);
+            } else if (iterable.t() == Value::T::LIST) {
+                items = iterable.list()->items;
+            } else if (iterable.t() == Value::T::GROUP) {
+                items = iterable.group()->items;
+            } else if (iterable.t() == Value::T::STR) {
+                for (char c : iterable.s()) items.push_back(mkStr(std::string(1, c)));
+            } else {
+                throw VesnaError("无法迭代: " + fmt(iterable));
+            }
+            for (auto& item : items) {
+                env->set(stmt->var_nid, item);
+                try {
+                    for (auto& s : stmt->body) exec(s, env);
+                } catch (BreakSignal&) {
+                    break;
+                } catch (ContinueSignal&) {
+                    continue;
+                }
+            }
+            break;
+        }
+
+        case Stmt::K::DEF: {
+            auto fn = std::make_shared<Function>();
+            fn->name = stmt->fname;
+            fn->params = stmt->params;
+            fn->body = stmt->body;
+            fn->closure = env;
+            env->setFunc(internId(stmt->fname), fn);
+            kept_.push_back(env);  // 保活被闭包引用的环境
+            break;
+        }
+
+        case Stmt::K::TRY: {
+            try {
+                for (auto& s : stmt->try_body) exec(s, env);
+            } catch (VesnaError& e) {
+                env->set(stmt->catch_nid, mkStr(e.str()));
+                for (auto& s : stmt->catch_body) exec(s, env);
+            }
+            break;
+        }
+
+        case Stmt::K::IMPORT:
+            doImport(stmt->import_name, env);
+            break;
+
+        case Stmt::K::ERR:
+            throw VesnaError(stmt->err_msg, stmt->err_line);
+
+        default:
+            throw VesnaError("未知语句");
+    }
+}
+
+void Interp::assign(int64_t nid, const std::shared_ptr<Expr>& idx,
+                    const std::string& op_kind, const Value& val, const std::shared_ptr<Env>& env) {
+    if (!idx) {
+        Value v = val;
+        if (op_kind != "ASSIGN") {
+            auto it = COMPOUND_OP.find(op_kind);
+            if (it == COMPOUND_OP.end()) throw VesnaError("未知复合运算符 " + op_kind);
+            const Value* oldv = env->getRef(nid);
+            v = binop(it->second, oldv ? *oldv : mkStr(internName(nid)), val);
+        }
+        env->set(nid, v);
+        return;
+    }
+    Value idxv = eval(idx, env);
+    const Value* target_p = env->getRef(nid);
+    Value target = target_p ? *target_p : mkStr(internName(nid));
+    if (target.t() == Value::T::LIST) {
+        if (idxv.t() == Value::T::FLOAT && idxv.f() == (double)(int64_t)idxv.f()) idxv = mkInt((int64_t)idxv.f());
+        if (idxv.t() != Value::T::INT) throw VesnaError("下标必须是整数");
+        int64_t py = (idxv.i() > 0) ? idxv.i() - 1 : idxv.i();
+        if (py < 0) py += (int64_t)target.list()->items.size();
+        if (py < 0 || py >= (int64_t)target.list()->items.size())
+            throw VesnaError("下标越界: " + fmt(idxv));
+        Value v = val;
+        if (op_kind != "ASSIGN") {
+            auto it = COMPOUND_OP.find(op_kind);
+            if (it == COMPOUND_OP.end()) throw VesnaError("未知复合运算符 " + op_kind);
+            v = binop(it->second, target.list()->items[(size_t)py], val);
+        }
+        target.list()->items[(size_t)py] = v;
+    } else if (target.t() == Value::T::DICT) {
+        Value v = val;
+        if (op_kind != "ASSIGN") {
+            auto it = COMPOUND_OP.find(op_kind);
+            if (it == COMPOUND_OP.end()) throw VesnaError("未知复合运算符 " + op_kind);
+            auto* old = dictFind(*target.dict(), idxv);
+            Value oldv = old ? old->second : mkNone();
+            v = binop(it->second, oldv, val);
+        }
+        dictSet(*target.dict(), idxv, v);
+    } else {
+        throw VesnaError("只能对列表或字典下标赋值");
+    }
+}
+
+Value Interp::eval(const std::shared_ptr<Expr>& e, const std::shared_ptr<Env>& env) {
+    switch (e->k) {
+        case Expr::K::NUM:
+            return e->is_float ? mkFloat(e->fnum) : mkInt(e->inum);
+        case Expr::K::STR:
+            return mkStr(e->str);
+        case Expr::K::BOOL:
+            return mkBool(e->bval);
+        case Expr::K::NONE:
+            return mkNone();
+        case Expr::K::VAR: {
+            const Value* v = env->getRef(e->nid);
+            return v ? *v : mkStr(e->str);
+        }
+        case Expr::K::INTERP:
+            return mkStr(interpStr(e->str, env));
+        case Expr::K::NEG: {
+            Value v = eval(e->a, env);
+            if (v.t() == Value::T::BOOL || !isNum(v)) throw VesnaError("一元负号只能用于数字");
+            return v.t() == Value::T::INT ? mkInt(-v.i()) : mkFloat(-v.f());
+        }
+        case Expr::K::NOT:
+            return mkBool(!truthy(eval(e->a, env)));
+        case Expr::K::AND: {
+            if (!truthy(eval(e->a, env))) return mkBool(false);
+            return mkBool(truthy(eval(e->b, env)));
+        }
+        case Expr::K::OR: {
+            if (truthy(eval(e->a, env))) return mkBool(true);
+            return mkBool(truthy(eval(e->b, env)));
+        }
+        case Expr::K::BIN:
+            return binop(e->op, eval(e->a, env), eval(e->b, env));
+        case Expr::K::GROUP: {
+            Value v = mkGroup();
+            for (auto& x : e->args) v.group()->items.push_back(eval(x, env));
+            return v;
+        }
+        case Expr::K::LIST: {
+            Value v = mkList();
+            for (auto& x : e->args) v.list()->items.push_back(eval(x, env));
+            return v;
+        }
+        case Expr::K::DICT: {
+            Value v = mkDict();
+            for (auto& [k, val] : e->pairs) dictSet(*v.dict(), eval(k, env), eval(val, env));
+            return v;
+        }
+        case Expr::K::INDEX: {
+            Value t = eval(e->a, env);
+            Value i = eval(e->b, env);
+            if (i.t() == Value::T::STR) {
+                if (t.t() == Value::T::DICT) {
+                    auto* p = dictFind(*t.dict(), i);
+                    if (!p) throw VesnaError("键不存在: " + i.s());
+                    return p->second;
+                }
+                throw VesnaError("键不存在: " + i.s());
+            }
+            if (i.t() == Value::T::FLOAT && i.f() == (double)(int64_t)i.f()) i = mkInt((int64_t)i.f());
+            if (t.t() == Value::T::DICT) {
+                auto* p = dictFind(*t.dict(), i);
+                if (!p) throw VesnaError("键不存在: " + fmt(i));
+                return p->second;
+            }
+            if (i.t() != Value::T::INT) throw VesnaError("下标必须是整数");
+            int64_t idx = i.i();
+            size_t size = 0;
+            if (t.t() == Value::T::LIST) size = t.list()->items.size();
+            else if (t.t() == Value::T::GROUP) size = t.group()->items.size();
+            else if (t.t() == Value::T::STR) size = t.s().size();
+            else throw VesnaError("无法索引: " + typeName(t));
+            int64_t py = (idx > 0) ? idx - 1 : idx;
+            if (py < 0) py += (int64_t)size;
+            if (py < 0 || py >= (int64_t)size) throw VesnaError("下标越界: " + fmt(i));
+            if (t.t() == Value::T::LIST) return t.list()->items[(size_t)py];
+            if (t.t() == Value::T::GROUP) return t.group()->items[(size_t)py];
+            return mkStr(std::string(1, t.s()[(size_t)py]));
+        }
+        case Expr::K::BUILTIN:
+            return builtin(e->str, e->args, env);
+        case Expr::K::INTO:
+            return into(e->str, eval(e->a, env));
+        case Expr::K::CALL:
+            return call(e->str, e->nid, e->args, env);
+    }
+    throw VesnaError("未知表达式");
+}
+
+static bool valueLess(const Value& a, const Value& b) {
+    if (isNum(a) && isNum(b)) {
+        if (a.t() == Value::T::INT && b.t() == Value::T::INT) return a.i() < b.i();
+        return numVal(a) < numVal(b);
+    }
+    if (a.t() != b.t()) throw VesnaError("无法比较: " + fmt(a) + " 和 " + fmt(b));
+    switch (a.t()) {
+        case Value::T::STR: return a.s() < b.s();
+        case Value::T::BOOL: return a.b() < b.b();
+        default: throw VesnaError("无法比较: " + fmt(a) + " 和 " + fmt(b));
+    }
+}
+
+Value Interp::binop(const std::string& op, const Value& l, const Value& r) {
+    if (op == "PLUS") {
+        if (l.t() == Value::T::STR && r.t() == Value::T::STR) return mkStr(l.s() + r.s());
+        if (l.t() == Value::T::BOOL || r.t() == Value::T::BOOL) throw VesnaError("布尔值不能相加");
+        if (isNum(l) && isNum(r)) return numArith(l, r, '+');
+        throw VesnaError("无法相加: " + fmt(l) + " + " + fmt(r));
+    }
+    if (op == "MINUS") { numOnly(l, r); return numArith(l, r, '-'); }
+    if (op == "STAR") { numOnly(l, r); return numArith(l, r, '*'); }
+    if (op == "SLASH") {
+        numOnly(l, r);
+        double b = numVal(r);
+        if (b == 0) throw VesnaError("除数不能为 0");
+        return mkFloat(numVal(l) / b);
+    }
+    if (op == "./") {  // 整除，截断向零
+        numOnly(l, r);
+        double b = numVal(r);
+        if (b == 0) throw VesnaError("除数不能为 0");
+        return mkInt((int64_t)(numVal(l) / b));
+    }
+    if (op == "/.") {  // 小数部分
+        numOnly(l, r);
+        double b = numVal(r);
+        if (b == 0) throw VesnaError("除数不能为 0");
+        double q = numVal(l) / b;
+        return mkFloat(q - (double)(int64_t)q);
+    }
+    if (op == "/-") {  // 取模（Python 语义）
+        numOnly(l, r);
+        double b = numVal(r);
+        if (b == 0) throw VesnaError("除数不能为 0");
+        if (l.t() == Value::T::INT && r.t() == Value::T::INT) return mkInt(pyModInt(l.i(), r.i()));
+        return mkFloat(pyModFloat(numVal(l), b));
+    }
+    if (op == "==") return mkBool(vesnaEq(l, r));
+    if (op == "!=") return mkBool(!vesnaEq(l, r));
+    if (op == "LT") { numOnlyCmp(l, r); return mkBool(valueLess(l, r)); }
+    if (op == "GT") { numOnlyCmp(l, r); return mkBool(valueLess(r, l)); }
+    if (op == "<=") { numOnlyCmp(l, r); return mkBool(!valueLess(r, l)); }
+    if (op == ">=") { numOnlyCmp(l, r); return mkBool(!valueLess(l, r)); }
+    throw VesnaError("未知运算符 " + op);
+}
+
+Value Interp::call(const std::string& name, int64_t nid, const std::vector<std::shared_ptr<Expr>>& args,
+                   const std::shared_ptr<Env>& env) {
+    if (name == "print") {
+        std::string line;
+        for (size_t i = 0; i < args.size(); ++i) {
+            if (i) line += ' ';
+            line += fmt(eval(args[i], env));
+        }
+        std::cout << line << '\n';
+        return mkNone();
+    }
+    if (name == "input") {
+        std::string p;
+        if (!args.empty()) {
+            Value pv = eval(args[0], env);
+            p = pv.t() == Value::T::STR ? pv.s() : fmt(pv);
+        }
+        std::cout << p;
+        std::cout.flush();
+        std::string line;
+        if (!std::getline(std::cin, line)) return mkStr("");
+        return mkStr(line);
+    }
+    auto fn = env->getFunc(nid);
+    if (args.size() > fn->params.size())
+        throw VesnaError(name + " 最多 " + std::to_string(fn->params.size()) + " 个参数");
+    auto closure = fn->closure.lock();
+    if (!closure) closure = env;
+    auto local = std::make_shared<Env>(closure);
+    for (size_t i = 0; i < fn->params.size(); ++i) {
+        const auto& pname = fn->params[i].first;
+        const auto& pdefault = fn->params[i].second;
+        if (i < args.size()) local->set(pname, eval(args[i], env));
+        else if (pdefault) local->set(pname, eval(pdefault, closure));
+        else throw VesnaError(name + " 缺少参数 " + internName(pname));
+    }
+    try {
+        for (auto& s : fn->body) exec(s, local);
+    } catch (ReturnSignal& rs) {
+        return rs.value;
+    }
+    return mkNone();
+}
+
+Value Interp::into(const std::string& t, const Value& v) {
+    if (t == "int") {
+        if (v.t() == Value::T::BOOL) return mkInt(v.b() ? 1 : 0);
+        if (v.t() == Value::T::INT) return v;
+        if (v.t() == Value::T::FLOAT) return mkInt((int64_t)v.f());
+        if (v.t() == Value::T::STR) {
+            try {
+                std::string s = trimStr(v.s());
+                if (s.find('.') != std::string::npos || s.find('e') != std::string::npos ||
+                    s.find('E') != std::string::npos)
+                    return mkInt((int64_t)std::stod(s));
+                return mkInt(std::stoll(s));
+            } catch (...) {
+                throw VesnaError("无法转成 int: " + v.s());
+            }
+        }
+        throw VesnaError("无法转成 int: " + fmt(v));
+    }
+    if (t == "str") {
+        if (v.t() == Value::T::STR) return v;
+        if (v.t() == Value::T::BOOL) return mkStr(v.b() ? "true" : "false");
+        if (v.t() == Value::T::INT) return mkStr(std::to_string(v.i()));
+        if (v.t() == Value::T::FLOAT) return mkStr(strFloat(v.f()));
+        return mkStr(fmt(v));
+    }
+    if (t == "float") {
+        if (v.t() == Value::T::BOOL) return mkFloat(v.b() ? 1.0 : 0.0);
+        if (v.t() == Value::T::INT) return mkFloat((double)v.i());
+        if (v.t() == Value::T::FLOAT) return v;
+        if (v.t() == Value::T::STR) {
+            try { return mkFloat(std::stod(v.s())); }
+            catch (...) { throw VesnaError("无法转成 float: " + v.s()); }
+        }
+        throw VesnaError("无法转成 float: " + fmt(v));
+    }
+    if (t == "bool") return mkBool(truthy(v));
+    if (t == "list") {
+        if (v.t() == Value::T::LIST) return v;
+        if (v.t() == Value::T::GROUP) { Value out = mkList(); out.list()->items = v.group()->items; return out; }
+        if (v.t() == Value::T::STR) {
+            Value out = mkList();
+            for (char c : v.s()) out.list()->items.push_back(mkStr(std::string(1, c)));
+            return out;
+        }
+        throw VesnaError("无法转成 list: " + fmt(v));
+    }
+    if (t == "dict") {
+        if (v.t() == Value::T::DICT) return v;
+        throw VesnaError("无法转成 dict: " + fmt(v));
+    }
+    throw VesnaError("未知类型 " + t);
+}
+
+std::string Interp::interpStr(const std::string& tpl, const std::shared_ptr<Env>& env) {
+    std::string out;
+    size_t i = 0;
+    while (i < tpl.size()) {
+        if (tpl[i] == '(') {
+            size_t j = tpl.find(')', i + 1);
+            if (j == std::string::npos) { out += tpl.substr(i); break; }
+            std::string name = tpl.substr(i + 1, j - i - 1);
+            const Value* vp = env->getRef(internId(name));
+            Value v = vp ? *vp : mkStr(name);
+            if (v.t() == Value::T::STR) out += v.s();
+            else if (v.t() == Value::T::BOOL) out += v.b() ? "true" : "false";
+            else if (v.t() == Value::T::INT) out += std::to_string(v.i());
+            else if (v.t() == Value::T::FLOAT) out += floatToStr(v.f());
+            else out += fmt(v);
+            i = j + 1;
+        } else {
+            out += tpl[i];
+            ++i;
+        }
+    }
+    return out;
+}
+
+void Interp::doImport(const std::string& name, const std::shared_ptr<Env>& env) {
+    std::string n = trimStr(name);
+    std::vector<std::string> paths = {
+        script_dir + "\\" + n + ".ves",
+        script_dir + "\\lib\\" + n + ".ves",
+        findVesnaHome() + "\\lib\\" + n + ".ves",
+    };
+    for (const auto& p : paths) {
+        if (fileExists(p)) {
+            std::string src = readFileUtf8(p);
+            Parser sub_parser(preprocess(src), p);
+            auto program = sub_parser.parse();
+            if (!sub_parser.errors.empty()) {
+                auto [line, msg] = sub_parser.errors[0];
+                throw VesnaError(n + ".ves: " + msg, line);
+            }
+            auto sub = std::make_shared<Interp>(argv, parentDir(p));
+            sub->run(program);
+            for (auto& [k, v] : sub->g->vars) env->set(k, v);
+            for (auto& [k, fn] : sub->g->funcs) env->setFunc(k, fn);
+            kept_.push_back(sub->g);  // 保活被导入函数闭包引用的环境
+            return;
+        }
+    }
+    throw VesnaError("找不到模块: " + n);
+}
+
+// ============================================================
+// 内置函数辅助工具
+// ============================================================
+static std::string parentDir(const std::string& path) {
+    std::wstring wp = utf8ToWide(path);
+    size_t pos = wp.find_last_of(L"/\\");
+    if (pos == std::wstring::npos) return ".";
+    if (pos == 0) return wideToUtf8(wp.substr(0, 1));
+    return wideToUtf8(wp.substr(0, pos));
+}
+
+static std::string pathAbs(const std::string& path) {
+    std::wstring wp = utf8ToWide(path);
+    wchar_t buf[MAX_PATH * 4];
+    DWORD n = GetFullPathNameW(wp.c_str(), MAX_PATH * 4, buf, nullptr);
+    if (n == 0) return path;
+    return wideToUtf8(std::wstring(buf, n));
+}
+
+static std::vector<Value> splitStr(const std::string& s, const std::string& sep) {
+    std::vector<Value> out;
+    size_t start = 0;
+    while (true) {
+        size_t pos = s.find(sep, start);
+        if (pos == std::string::npos) { out.push_back(mkStr(s.substr(start))); break; }
+        out.push_back(mkStr(s.substr(start, pos - start)));
+        start = pos + sep.size();
+    }
+    return out;
+}
+
+static int64_t utf8FirstCodepoint(const std::string& s) {
+    if (s.empty()) return 0;
+    unsigned char c = (unsigned char)s[0];
+    if (c < 0x80) return c;
+    if ((c & 0xE0) == 0xC0 && s.size() >= 2)
+        return ((c & 0x1F) << 6) | ((unsigned char)s[1] & 0x3F);
+    if ((c & 0xF0) == 0xE0 && s.size() >= 3)
+        return ((c & 0x0F) << 12) | (((unsigned char)s[1] & 0x3F) << 6) | ((unsigned char)s[2] & 0x3F);
+    if ((c & 0xF8) == 0xF0 && s.size() >= 4)
+        return ((c & 0x07) << 18) | (((unsigned char)s[1] & 0x3F) << 12) |
+               (((unsigned char)s[2] & 0x3F) << 6) | ((unsigned char)s[3] & 0x3F);
+    return c;
+}
+
+static std::string utf8FromCodepoint(int64_t cp) {
+    if (cp < 0x80) return std::string(1, (char)cp);
+    if (cp < 0x800) {
+        std::string s(2, '\0');
+        s[0] = (char)(0xC0 | (cp >> 6));
+        s[1] = (char)(0x80 | (cp & 0x3F));
+        return s;
+    }
+    if (cp < 0x10000) {
+        std::string s(3, '\0');
+        s[0] = (char)(0xE0 | (cp >> 12));
+        s[1] = (char)(0x80 | ((cp >> 6) & 0x3F));
+        s[2] = (char)(0x80 | (cp & 0x3F));
+        return s;
+    }
+    std::string s(4, '\0');
+    s[0] = (char)(0xF0 | (cp >> 18));
+    s[1] = (char)(0x80 | ((cp >> 12) & 0x3F));
+    s[2] = (char)(0x80 | ((cp >> 6) & 0x3F));
+    s[3] = (char)(0x80 | (cp & 0x3F));
+    return s;
+}
+
+// Python str(float)：最短表示，整数补 .0
+static std::string strFloat(double f) {
+    char buf[64];
+    auto res = std::to_chars(buf, buf + sizeof(buf), f);
+    std::string s(buf, res.ptr);
+    if (s.find('.') == std::string::npos && s.find('e') == std::string::npos &&
+        s.find('E') == std::string::npos && s.find('n') == std::string::npos &&
+        s.find("inf") == std::string::npos)
+        s += ".0";
+    return s;
+}
+
+// Python round：四舍六入五取偶
+static int64_t pyRound(double x) {
+    double f = std::floor(x);
+    double d = x - f;
+    if (d > 0.5) return (int64_t)f + 1;
+    if (d < 0.5) return (int64_t)f;
+    return ((int64_t)f % 2 == 0) ? (int64_t)f : (int64_t)f + 1;
+}
+
+static std::string titleAscii(const std::string& s) {
+    std::string out = s;
+    bool prevAlpha = false;
+    for (auto& c : out) {
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
+            if (!prevAlpha) { if (c >= 'a' && c <= 'z') c -= 32; }
+            else { if (c >= 'A' && c <= 'Z') c += 32; }
+            prevAlpha = true;
+        } else {
+            prevAlpha = false;
+        }
+    }
+    return out;
+}
+
+static std::string capitalizeAscii(const std::string& s) {
+    std::string out = s;
+    for (auto& c : out) {
+        if (c >= 'A' && c <= 'Z') c += 32;
+    }
+    if (!out.empty() && out[0] >= 'a' && out[0] <= 'z') out[0] -= 32;
+    return out;
+}
+
+// 判断模式是否为"纯字面量"（无正则元字符）——是则可用字符串查找代替 regex
+static bool isRegexSafeLiteral(const std::string& p) {
+    for (unsigned char c : p) {
+        if (c >= 0x80) continue;  // 中文等多字节字符
+        if (std::isalnum(c)) continue;
+        if (c == '_' || c == ' ' || c == '\t' || c == '\n' || c == '\r') continue;
+        if (std::string(",-/:;@#%&=~!'\"<>").find((char)c) != std::string::npos) continue;
+        return false;  // 正则元字符（.*+?()[]{}|^$\ 等）
+    }
+    return true;
+}
+
+// 正则缓存：避免同一模式反复编译（grep/findall 类任务的主要开销）
+static std::regex& cachedRegex(const std::string& pat) {
+    static std::unordered_map<std::string, std::regex> cache;
+    auto it = cache.find(pat);
+    if (it != cache.end()) return it->second;
+    if (cache.size() > 256) cache.clear();
+    auto res = cache.emplace(pat, std::regex(pat));  // 无效正则抛 regex_error
+    return res.first->second;
+}
+
+// ============================================================
+// 内置函数
+// ============================================================
+Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr<Expr>>& args,
+                      const std::shared_ptr<Env>& env) {
+    auto ev = [&](size_t i) -> Value { return eval(args[i], env); };
+    auto argc = [&]() -> size_t { return args.size(); };
+    static const std::unordered_map<std::string, int> g_bi = {{"up",1},{"down",2},{"len",3},{"sub",4},{"split",5},{"join",6},{"find",7},{"replace",8},{"append",9},{"pop",10},{"keys",11},{"values",12},{"type",13},{"args",14},{"fread",15},{"fwrite",16},{"fappend",17},{"fexists",18},{"exit",19},{"f",20},{"trim",21},{"startswith",22},{"endswith",23},{"lines",24},{"repeat",25},{"has_key",26},{"str",27},{"int",28},{"float",29},{"bool",30},{"char_at",31},{"sort",32},{"reverse",33},{"slice",34},{"map",35},{"filter",36},{"reduce",37},{"match",38},{"search",39},{"findall",40},{"gsub",41},{"ls",42},{"glob",43},{"stdin",44},{"ord",45},{"chr",46},{"is_digit",47},{"is_alpha",48},{"is_alnum",49},{"is_space",50},{"lstrip",51},{"rstrip",52},{"title",53},{"capitalize",54},{"count",55},{"rfind",56},{"min",57},{"max",58},{"sum",59},{"abs",60},{"round",61},{"pow",62},{"contains",63},{"mkdir",64},{"copy",65},{"rmdir",66},{"rename",67},{"getenv",68},{"setenv",69},{"cwd",70},{"chdir",71},{"regwrite",72},{"regdelete",73},{"shell",74},{"path_clean",75}};
+    auto it = g_bi.find(name);
+    if (it == g_bi.end()) throw VesnaError("未知内置 -" + name);
+    switch (it->second) {
+
+    case 1: {
+        Value v = ev(0);
+        if (v.t() != Value::T::STR) throw VesnaError("-up 需要字符串");
+        return mkStr(toUpperAscii(v.s()));
+    }
+    case 2: {
+        Value v = ev(0);
+        if (v.t() != Value::T::STR) throw VesnaError("-down 需要字符串");
+        return mkStr(toLowerAscii(v.s()));
+    }
+    case 3: {
+        Value v = ev(0);
+        switch (v.t()) {
+            case Value::T::STR: return mkInt((int64_t)v.s().size());
+            case Value::T::LIST: return mkInt((int64_t)v.list()->items.size());
+            case Value::T::GROUP: return mkInt((int64_t)v.group()->items.size());
+            case Value::T::DICT: return mkInt((int64_t)v.dict()->pairs.size());
+            default: throw VesnaError("-len 需要字符串/列表/组/字典");
+        }
+    }
+    case 4: {
+        Value s = ev(0), st = ev(1), en = ev(2);
+        if (s.t() != Value::T::STR) throw VesnaError("-sub 第一个参数需要字符串");
+        if (st.t() != Value::T::INT || en.t() != Value::T::INT) throw VesnaError("-sub 下标需要整数");
+        int64_t a = st.i() - 1, b = en.i();
+        if (a < 0) a = 0;
+        if (a > (int64_t)s.s().size()) a = (int64_t)s.s().size();
+        if (b < a) b = a;
+        if (b > (int64_t)s.s().size()) b = (int64_t)s.s().size();
+        return mkStr(s.s().substr((size_t)a, (size_t)(b - a)));
+    }
+    case 5: {
+        Value s = ev(0);
+        std::string sep = " ";
+        if (argc() > 1) {
+            Value se = ev(1);
+            if (se.t() != Value::T::STR) throw VesnaError("-split 第二个参数需要字符串");
+            sep = se.s();
+        }
+        if (s.t() != Value::T::STR) throw VesnaError("-split 第一个参数需要字符串");
+        if (sep.empty()) throw VesnaError("-split 分隔符不能为空");
+        Value out = mkList();
+        out.list()->items = splitStr(s.s(), sep);
+        return out;
+    }
+    case 6: {
+        Value lst = ev(0);
+        std::string sep;
+        if (argc() > 1) {
+            Value se = ev(1);
+            if (se.t() != Value::T::STR) throw VesnaError("-join 第二个参数需要字符串");
+            sep = se.s();
+        }
+        if (lst.t() != Value::T::LIST && lst.t() != Value::T::GROUP)
+            throw VesnaError("-join 第一个参数需要列表/组");
+        const auto& items = lst.t() == Value::T::LIST ? lst.list()->items : lst.group()->items;
+        std::string out;
+        for (size_t i = 0; i < items.size(); ++i) {
+            if (i) out += sep;
+            out += items[i].t() == Value::T::STR ? items[i].s() : fmt(items[i]);
+        }
+        return mkStr(out);
+    }
+    case 7: {
+        Value s = ev(0), sub = ev(1);
+        if (s.t() != Value::T::STR) throw VesnaError("-find 需要字符串");
+        size_t i = s.s().find(sub.s());
+        return mkInt(i == std::string::npos ? 0 : (int64_t)i + 1);
+    }
+    case 8: {
+        Value s = ev(0), oldv = ev(1), newv = ev(2);
+        if (s.t() != Value::T::STR) throw VesnaError("-replace 第一个参数需要字符串");
+        std::string out = s.s();
+        size_t pos = 0;
+        while ((pos = out.find(oldv.s(), pos)) != std::string::npos) {
+            out.replace(pos, oldv.s().size(), newv.s());
+            pos += newv.s().size();
+        }
+        return mkStr(out);
+    }
+    case 9: {
+        Value lst = ev(0), v = ev(1);
+        if (lst.t() != Value::T::LIST) throw VesnaError("-append 第一个参数需要列表");
+        lst.list()->items.push_back(v);
+        return lst;
+    }
+    case 10: {
+        Value lst = ev(0);
+        if (lst.t() != Value::T::LIST) throw VesnaError("-pop 需要列表");
+        if (lst.list()->items.empty()) throw VesnaError("-pop 空列表");
+        Value v = lst.list()->items.back();
+        lst.list()->items.pop_back();
+        return v;
+    }
+    case 11: {
+        Value d = ev(0);
+        if (d.t() != Value::T::DICT) throw VesnaError("-keys 需要字典");
+        Value out = mkList();
+        for (auto& p : d.dict()->pairs) out.list()->items.push_back(p.first);
+        return out;
+    }
+    case 12: {
+        Value d = ev(0);
+        if (d.t() != Value::T::DICT) throw VesnaError("-values 需要字典");
+        Value out = mkList();
+        for (auto& p : d.dict()->pairs) out.list()->items.push_back(p.second);
+        return out;
+    }
+    case 13: {
+        return mkStr(typeName(ev(0)));
+    }
+    case 14: {
+        Value out = mkList();
+        for (auto& a : argv) out.list()->items.push_back(mkStr(a));
+        return out;
+    }
+    case 15: {
+        Value p = ev(0);
+        if (p.t() != Value::T::STR) throw VesnaError("-fread 需要字符串");
+        return mkStr(readFileUtf8(p.s()));
+    }
+    case 16: {
+        Value p = ev(0), c = ev(1);
+        if (p.t() != Value::T::STR) throw VesnaError("-fwrite 第一个参数需要字符串");
+        writeFileUtf8(p.s(), c.t() == Value::T::STR ? c.s() : fmt(c), false);
+        return mkNone();
+    }
+    case 17: {
+        Value p = ev(0), c = ev(1);
+        if (p.t() != Value::T::STR) throw VesnaError("-fappend 第一个参数需要字符串");
+        writeFileUtf8(p.s(), c.t() == Value::T::STR ? c.s() : fmt(c), true);
+        return mkNone();
+    }
+    case 18: {
+        Value p = ev(0);
+        return mkBool(fileExists(p.t() == Value::T::STR ? p.s() : fmt(p)));
+    }
+    case 19: {
+        int code = 0;
+        if (argc() > 0) {
+            Value c = ev(0);
+            code = (int)(c.t() == Value::T::INT ? c.i() : (int64_t)numVal(c));
+        }
+        throw ExitSignal(code);
+    }
+    case 20: {
+        throw VesnaError("-f 必须紧接字符串: -f\"...\"");
+    }
+
+    // ---- 字符串 ----
+    case 21: {
+        Value v = ev(0);
+        if (v.t() != Value::T::STR) throw VesnaError("-trim 需要字符串");
+        return mkStr(trimStr(v.s()));
+    }
+    case 22: {
+        Value s = ev(0), p = ev(1);
+        if (s.t() != Value::T::STR) throw VesnaError("-startswith 第一个参数需要字符串");
+        return mkBool(s.s().rfind(p.s(), 0) == 0);
+    }
+    case 23: {
+        Value s = ev(0), p = ev(1);
+        if (s.t() != Value::T::STR) throw VesnaError("-endswith 第一个参数需要字符串");
+        return mkBool(s.s().size() >= p.s().size() &&
+                      s.s().compare(s.s().size() - p.s().size(), p.s().size(), p.s()) == 0);
+    }
+    case 24: {
+        Value v = ev(0);
+        if (v.t() != Value::T::STR) throw VesnaError("-lines 需要字符串");
+        Value out = mkList();
+        std::string cur;
+        for (size_t i = 0; i < v.s().size(); ++i) {
+            char c = v.s()[i];
+            if (c == '\n') { out.list()->items.push_back(mkStr(cur)); cur.clear(); }
+            else if (c == '\r') {
+                out.list()->items.push_back(mkStr(cur)); cur.clear();
+                if (i + 1 < v.s().size() && v.s()[i + 1] == '\n') ++i;
+            }
+            else cur += c;
+        }
+        if (!cur.empty() || v.s().empty()) out.list()->items.push_back(mkStr(cur));
+        return out;
+    }
+    case 25: {
+        Value s = ev(0), n = ev(1);
+        if (s.t() != Value::T::STR) throw VesnaError("-repeat 第一个参数需要字符串");
+        int64_t cnt = n.t() == Value::T::INT ? n.i() : (int64_t)numVal(n);
+        std::string out;
+        out.reserve(s.s().size() * cnt);
+        for (int64_t i = 0; i < cnt; ++i) out += s.s();
+        return mkStr(out);
+    }
+    case 26: {
+        Value d = ev(0), k = ev(1);
+        if (d.t() != Value::T::DICT) throw VesnaError("-has_key 第一个参数需要字典");
+        return mkBool(dictFind(*d.dict(), k) != nullptr);
+    }
+    case 27: return into("str", ev(0));
+    case 28: return into("int", ev(0));
+    case 29: return into("float", ev(0));
+    case 30: return into("bool", ev(0));
+    case 31: {
+        Value s = ev(0), i = ev(1);
+        if (s.t() != Value::T::STR) throw VesnaError("-char_at 第一个参数需要字符串");
+        int64_t idx = i.t() == Value::T::INT ? i.i() : (int64_t)numVal(i);
+        if (idx < 1 || idx > (int64_t)s.s().size())
+            throw VesnaError("-char_at 下标越界: " + fmt(i));
+        return mkStr(std::string(1, s.s()[(size_t)idx - 1]));
+    }
+
+    // ---- 列表 ----
+    case 32: {
+        Value v = ev(0);
+        if (v.t() != Value::T::LIST && v.t() != Value::T::GROUP) throw VesnaError("-sort 需要列表/组");
+        std::vector<Value> items = v.t() == Value::T::LIST ? v.list()->items : v.group()->items;
+        std::stable_sort(items.begin(), items.end(), [](const Value& a, const Value& b) {
+            return valueLess(a, b);
+        });
+        Value out = mkList();
+        out.list()->items = std::move(items);
+        return out;
+    }
+    case 33: {
+        Value v = ev(0);
+        if (v.t() != Value::T::LIST && v.t() != Value::T::GROUP) throw VesnaError("-reverse 需要列表/组");
+        std::vector<Value> items = v.t() == Value::T::LIST ? v.list()->items : v.group()->items;
+        std::reverse(items.begin(), items.end());
+        Value out = mkList();
+        out.list()->items = std::move(items);
+        return out;
+    }
+    case 34: {
+        Value lst = ev(0), st = ev(1), en = ev(2);
+        if (lst.t() != Value::T::LIST && lst.t() != Value::T::GROUP && lst.t() != Value::T::STR)
+            throw VesnaError("-slice 第一个参数需要列表/组/字符串");
+        if (st.t() != Value::T::INT || en.t() != Value::T::INT) throw VesnaError("-slice 下标需要整数");
+        size_t size = lst.t() == Value::T::STR ? lst.s().size()
+                     : lst.t() == Value::T::LIST ? lst.list()->items.size()
+                                               : lst.group()->items.size();
+        int64_t a = st.i() - 1, b = en.i();
+        if (a < 0) a = 0;
+        if (a > (int64_t)size) a = (int64_t)size;
+        if (b < a) b = a;
+        if (b > (int64_t)size) b = (int64_t)size;
+        if (lst.t() == Value::T::STR) return mkStr(lst.s().substr((size_t)a, (size_t)(b - a)));
+        Value out = mkList();
+        const auto& items = lst.t() == Value::T::LIST ? lst.list()->items : lst.group()->items;
+        for (int64_t i = a; i < b; ++i) out.list()->items.push_back(items[(size_t)i]);
+        return out;
+    }
+
+    case 35: case 36: {
+        Value lst = ev(0);
+        if (lst.t() != Value::T::LIST && lst.t() != Value::T::GROUP)
+            throw VesnaError("-" + name + " 第一个参数需要列表/组");
+        Value fnameV = ev(1);
+        if (fnameV.t() != Value::T::STR)
+            throw VesnaError("-" + name + " 第二个参数需要函数名字符串");
+        auto fn = env->getFunc(internId(fnameV.s()));
+        if (fn->params.empty()) throw VesnaError(fnameV.s() + " 需要 1 个参数");
+        const auto& items = lst.t() == Value::T::LIST ? lst.list()->items : lst.group()->items;
+        Value out = mkList();
+        for (auto& item : items) {
+            auto closure = fn->closure.lock();
+            auto local = std::make_shared<Env>(closure);
+            local->set(fn->params[0].first, item);
+            Value result = mkNone();
+            try {
+                for (auto& s : fn->body) exec(s, local);
+            } catch (ReturnSignal& rs) {
+                result = rs.value;
+            }
+            if (name == "map") out.list()->items.push_back(result);
+            else if (truthy(result)) out.list()->items.push_back(item);
+        }
+        return out;
+    }
+    case 37: {
+        Value lst = ev(0);
+        if (lst.t() != Value::T::LIST && lst.t() != Value::T::GROUP)
+            throw VesnaError("-reduce 第一个参数需要列表/组");
+        Value fnameV = ev(1);
+        if (fnameV.t() != Value::T::STR) throw VesnaError("-reduce 第二个参数需要函数名字符串");
+        Value init = argc() > 2 ? ev(2) : mkNone();
+        auto fn = env->getFunc(internId(fnameV.s()));
+        if (fn->params.size() < 2) throw VesnaError(fnameV.s() + " 需要 2 个参数");
+        Value acc = init;
+        const auto& items = lst.t() == Value::T::LIST ? lst.list()->items : lst.group()->items;
+        for (auto& item : items) {
+            auto closure = fn->closure.lock();
+            auto local = std::make_shared<Env>(closure);
+            local->set(fn->params[0].first, acc);
+            local->set(fn->params[1].first, item);
+            acc = mkNone();
+            try {
+                for (auto& s : fn->body) exec(s, local);
+            } catch (ReturnSignal& rs) {
+                acc = rs.value;
+            }
+        }
+        return acc;
+    }
+
+    // ---- 正则 ----
+    case 38: {
+        Value s = ev(0), pat = ev(1);
+        if (s.t() != Value::T::STR) throw VesnaError("-match 第一个参数需要字符串");
+        if (isRegexSafeLiteral(pat.s())) return mkBool(s.s().find(pat.s()) != std::string::npos);
+        try { return mkBool(std::regex_search(s.s(), cachedRegex(pat.s()))); }
+        catch (std::regex_error&) { throw VesnaError("-match 无效正则: " + pat.s()); }
+    }
+    case 39: {
+        Value s = ev(0), pat = ev(1);
+        if (s.t() != Value::T::STR) throw VesnaError("-search 第一个参数需要字符串");
+        if (isRegexSafeLiteral(pat.s())) {
+            size_t pos = s.s().find(pat.s());
+            Value out = mkList();
+            if (pos != std::string::npos) out.list()->items.push_back(mkStr(pat.s()));
+            return out;
+        }
+        try {
+            std::smatch m;
+            std::regex& re = cachedRegex(pat.s());
+            if (!std::regex_search(s.s(), m, re)) return mkList();
+            Value out = mkList();
+            if (m.size() > 1) {
+                for (size_t i = 1; i < m.size(); ++i) out.list()->items.push_back(mkStr(m[i].str()));
+            } else {
+                out.list()->items.push_back(mkStr(m[0].str()));
+            }
+            return out;
+        } catch (std::regex_error&) { throw VesnaError("-search 无效正则: " + pat.s()); }
+    }
+    case 40: {
+        Value s = ev(0), pat = ev(1);
+        if (s.t() != Value::T::STR) throw VesnaError("-findall 第一个参数需要字符串");
+        if (isRegexSafeLiteral(pat.s())) {
+            Value out = mkList();
+            size_t pos = 0;
+            while ((pos = s.s().find(pat.s(), pos)) != std::string::npos) {
+                out.list()->items.push_back(mkStr(pat.s()));
+                pos += pat.s().size();
+            }
+            return out;
+        }
+        try {
+            std::regex& re = cachedRegex(pat.s());
+            Value out = mkList();
+            auto begin = std::sregex_iterator(s.s().begin(), s.s().end(), re);
+            auto end = std::sregex_iterator();
+            for (auto it = begin; it != end; ++it) {
+                const std::smatch& m = *it;
+                if (m.size() > 1) {
+                    Value g = mkGroup();
+                    for (size_t i = 1; i < m.size(); ++i) g.group()->items.push_back(mkStr(m[i].str()));
+                    out.list()->items.push_back(g);
+                } else {
+                    out.list()->items.push_back(mkStr(m[0].str()));
+                }
+            }
+            return out;
+        } catch (std::regex_error&) { throw VesnaError("-findall 无效正则: " + pat.s()); }
+    }
+    case 41: {
+        Value s = ev(0), pat = ev(1), repl = ev(2);
+        if (s.t() != Value::T::STR) throw VesnaError("-gsub 第一个参数需要字符串");
+        if (isRegexSafeLiteral(pat.s()) && repl.s().find('\\') == std::string::npos &&
+            repl.s().find('$') == std::string::npos) {
+            std::string out = s.s();
+            size_t pos = 0;
+            while ((pos = out.find(pat.s(), pos)) != std::string::npos) {
+                out.replace(pos, pat.s().size(), repl.s());
+                pos += repl.s().size();
+            }
+            return mkStr(out);
+        }
+        try {
+            std::string rp;
+            for (size_t i = 0; i < repl.s().size(); ++i) {
+                if (repl.s()[i] == '\\' && i + 1 < repl.s().size() &&
+                    std::isdigit((unsigned char)repl.s()[i + 1])) {
+                    rp += '$'; rp += repl.s()[i + 1]; ++i;
+                } else if (repl.s()[i] == '\\' && i + 1 < repl.s().size() && repl.s()[i + 1] == '\\') {
+                    rp += "\\\\"; ++i;
+                } else {
+                    rp += repl.s()[i];
+                }
+            }
+            return mkStr(std::regex_replace(s.s(), cachedRegex(pat.s()), rp));
+        } catch (std::regex_error&) { throw VesnaError("-gsub 无效正则: " + pat.s()); }
+    }
+
+    // ---- 文件 ----
+    case 42: {
+        std::string d = ".";
+        if (argc() > 0) {
+            Value v = ev(0);
+            if (v.t() == Value::T::STR) d = v.s();
+        }
+        Value out = mkList();
+        try {
+            for (auto& e : listDir(d)) out.list()->items.push_back(mkStr(e));
+        } catch (VesnaError&) { throw; }
+        return out;
+    }
+    case 43: {
+        Value p = ev(0);
+        if (p.t() != Value::T::STR) throw VesnaError("-glob 需要字符串");
+        Value out = mkList();
+        for (auto& e : globPaths(p.s())) out.list()->items.push_back(mkStr(e));
+        return out;
+    }
+    case 44: {
+        std::string data((std::istreambuf_iterator<char>(std::cin)),
+                         std::istreambuf_iterator<char>());
+        return mkStr(univNewlines(data));
+    }
+
+    // ---- 字符 ----
+    case 45: {
+        Value c = ev(0);
+        if (c.t() != Value::T::STR || c.s().empty()) throw VesnaError("-ord 需要非空字符串");
+        return mkInt(utf8FirstCodepoint(c.s()));
+    }
+    case 46: {
+        Value n = ev(0);
+        int64_t cp = n.t() == Value::T::INT ? n.i() : (int64_t)numVal(n);
+        if (cp < 0 || cp > 0x10FFFF) throw VesnaError("-chr 无效码点: " + std::to_string(cp));
+        return mkStr(utf8FromCodepoint(cp));
+    }
+    case 47: {
+        Value c = ev(0);
+        return mkBool(c.t() == Value::T::STR && c.s().size() == 1 &&
+                      c.s()[0] >= '0' && c.s()[0] <= '9');
+    }
+    case 48: {
+        Value c = ev(0);
+        return mkBool(c.t() == Value::T::STR && c.s().size() == 1 &&
+                      std::isalpha((unsigned char)c.s()[0]));
+    }
+    case 49: {
+        Value c = ev(0);
+        return mkBool(c.t() == Value::T::STR && c.s().size() == 1 &&
+                      std::isalnum((unsigned char)c.s()[0]));
+    }
+    case 50: {
+        Value c = ev(0);
+        return mkBool(c.t() == Value::T::STR && c.s().size() == 1 &&
+                      std::isspace((unsigned char)c.s()[0]));
+    }
+
+    // ---- 字符串扩展 ----
+    case 51: {
+        Value v = ev(0);
+        if (v.t() != Value::T::STR) throw VesnaError("-lstrip 需要字符串");
+        size_t b = v.s().find_first_not_of(" \t\r\n");
+        return mkStr(b == std::string::npos ? "" : v.s().substr(b));
+    }
+    case 52: {
+        Value v = ev(0);
+        if (v.t() != Value::T::STR) throw VesnaError("-rstrip 需要字符串");
+        size_t e = v.s().find_last_not_of(" \t\r\n");
+        return mkStr(e == std::string::npos ? "" : v.s().substr(0, e + 1));
+    }
+    case 53: {
+        Value v = ev(0);
+        if (v.t() != Value::T::STR) throw VesnaError("-title 需要字符串");
+        return mkStr(titleAscii(v.s()));
+    }
+    case 54: {
+        Value v = ev(0);
+        if (v.t() != Value::T::STR) throw VesnaError("-capitalize 需要字符串");
+        return mkStr(capitalizeAscii(v.s()));
+    }
+    case 55: {
+        Value s = ev(0), sub = ev(1);
+        if (s.t() != Value::T::STR) throw VesnaError("-count 第一个参数需要字符串");
+        if (sub.s().empty()) return mkInt((int64_t)s.s().size() + 1);
+        int64_t cnt = 0;
+        size_t pos = 0;
+        while ((pos = s.s().find(sub.s(), pos)) != std::string::npos) { ++cnt; pos += sub.s().size(); }
+        return mkInt(cnt);
+    }
+    case 56: {
+        Value s = ev(0), sub = ev(1);
+        if (s.t() != Value::T::STR) throw VesnaError("-rfind 第一个参数需要字符串");
+        size_t i = s.s().rfind(sub.s());
+        return mkInt(i == std::string::npos ? 0 : (int64_t)i + 1);
+    }
+
+    // ---- 数学 ----
+    case 57: case 58: {
+        if (argc() == 0) throw VesnaError("-" + name + " 需要至少一个参数");
+        Value v = ev(0);
+        std::vector<Value> vals;
+        if (v.t() == Value::T::LIST || v.t() == Value::T::GROUP) {
+            const auto& items = v.t() == Value::T::LIST ? v.list()->items : v.group()->items;
+            if (items.empty()) throw VesnaError("-" + name + " 不能是空列表");
+            vals = items;
+        } else {
+            vals.push_back(v);
+            for (size_t i = 1; i < argc(); ++i) vals.push_back(ev(i));
+        }
+        auto better = [&](const Value& a, const Value& b) {
+            if (name == "min") return valueLess(a, b);
+            return valueLess(b, a);
+        };
+        Value best = vals[0];
+        for (size_t i = 1; i < vals.size(); ++i)
+            if (better(vals[i], best)) best = vals[i];
+        return best;
+    }
+    case 59: {
+        Value v = ev(0);
+        if (v.t() != Value::T::LIST && v.t() != Value::T::GROUP) throw VesnaError("-sum 需要列表/组");
+        const auto& items = v.t() == Value::T::LIST ? v.list()->items : v.group()->items;
+        bool anyFloat = false;
+        for (auto& x : items) if (x.t() == Value::T::FLOAT) anyFloat = true;
+        if (anyFloat) {
+            double acc = 0;
+            for (auto& x : items) {
+                if (x.t() == Value::T::INT) acc += x.i();
+                else if (x.t() == Value::T::FLOAT) acc += x.f();
+                else if (x.t() == Value::T::BOOL) acc += x.b() ? 1 : 0;
+                else throw VesnaError("-sum 只能对数字求和");
+            }
+            return mkFloat(acc);
+        }
+        int64_t acc = 0;
+        for (auto& x : items) {
+            if (x.t() == Value::T::INT) acc += x.i();
+            else if (x.t() == Value::T::BOOL) acc += x.b() ? 1 : 0;
+            else throw VesnaError("-sum 只能对数字求和");
+        }
+        return mkInt(acc);
+    }
+    case 60: {
+        Value v = ev(0);
+        if (v.t() == Value::T::BOOL || !isNum(v)) throw VesnaError("-abs 需要数字");
+        return v.t() == Value::T::INT ? mkInt(v.i() < 0 ? -v.i() : v.i()) : mkFloat(std::abs(v.f()));
+    }
+    case 61: {
+        Value v = ev(0);
+        if (v.t() == Value::T::BOOL || !isNum(v)) throw VesnaError("-round 需要数字");
+        double x = numVal(v);
+        if (argc() > 1) {
+            Value n = ev(1);
+            int64_t nd = n.t() == Value::T::INT ? n.i() : (int64_t)numVal(n);
+            double scale = std::pow(10.0, (double)nd);
+            return mkFloat((double)pyRound(x * scale) / scale);
+        }
+        return mkInt(pyRound(x));
+    }
+    case 62: {
+        Value a = ev(0), b = ev(1);
+        if (!isNum(a) || !isNum(b)) throw VesnaError("-pow 需要数字");
+        double x = numVal(a), y = numVal(b);
+        if (x < 0 && std::floor(y) != y) throw VesnaError("-pow 结果为复数，不支持");
+        double r = std::pow(x, y);
+        if (std::isnan(r) || std::isinf(r)) throw VesnaError("-pow 无法计算");
+        if (a.t() == Value::T::INT && b.t() == Value::T::INT && y >= 0 && r < 9.2e18)
+            return mkInt((int64_t)r);
+        return mkFloat(r);
+    }
+
+    // ---- 容器 ----
+    case 63: {
+        Value v = ev(0), x = ev(1);
+        switch (v.t()) {
+            case Value::T::LIST:
+                for (auto& it : v.list()->items) if (vesnaEq(it, x)) return mkBool(true);
+                return mkBool(false);
+            case Value::T::GROUP:
+                for (auto& it : v.group()->items) if (vesnaEq(it, x)) return mkBool(true);
+                return mkBool(false);
+            case Value::T::STR: {
+                if (x.t() != Value::T::STR) throw VesnaError("-contains 字符串参数需要字符串");
+                return mkBool(v.s().find(x.s()) != std::string::npos);
+            }
+            case Value::T::DICT:
+                return mkBool(dictFind(*v.dict(), x) != nullptr);
+            default:
+                throw VesnaError("-contains 需要列表/组/字符串/字典");
+        }
+    }
+
+    // ---- 文件系统 ----
+    case 64: {
+        Value p = ev(0);
+        if (p.t() != Value::T::STR) throw VesnaError("-mkdir 需要字符串");
+        makeDirs(p.s());
+        return mkNone();
+    }
+    case 65: {
+        Value s = ev(0), d = ev(1);
+        if (s.t() != Value::T::STR || d.t() != Value::T::STR)
+            throw VesnaError("-copy 参数需要字符串");
+        if (!fileExists(s.s())) throw VesnaError("-copy 源不存在: " + s.s());
+        if (isDirectory(s.s())) {
+            makeDirs(d.s());
+            copyPath(s.s(), d.s());
+        } else {
+            makeDirs(parentDir(d.s()));
+            copyPath(s.s(), d.s());
+        }
+        return mkNone();
+    }
+    case 66: {
+        Value p = ev(0);
+        if (p.t() != Value::T::STR) throw VesnaError("-rmdir 需要字符串");
+        if (fileExists(p.s())) removeTree(p.s());
+        return mkNone();
+    }
+    case 67: {
+        Value s = ev(0), d = ev(1);
+        if (s.t() != Value::T::STR || d.t() != Value::T::STR)
+            throw VesnaError("-rename 参数需要字符串");
+        if (!MoveFileW(utf8ToWide(s.s()).c_str(), utf8ToWide(d.s()).c_str()))
+            throw VesnaError("-rename 失败: " + s.s());
+        return mkNone();
+    }
+    case 68: {
+        Value k = ev(0);
+        if (k.t() != Value::T::STR) throw VesnaError("-getenv 需要字符串");
+        const char* v = std::getenv(k.s().c_str());
+        return mkStr(v ? v : "");
+    }
+    case 69: {
+        Value k = ev(0), v = ev(1);
+        if (k.t() != Value::T::STR || v.t() != Value::T::STR)
+            throw VesnaError("-setenv 参数需要字符串");
+        HKEY hk;
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Environment", 0, KEY_SET_VALUE, &hk) != ERROR_SUCCESS)
+            throw VesnaError("-setenv 失败: 无法打开 Environment 注册表键");
+        std::wstring wk = utf8ToWide(k.s()), wv = utf8ToWide(v.s());
+        LONG r = RegSetValueExW(hk, wk.c_str(), 0, REG_SZ,
+                                (const BYTE*)wv.c_str(),
+                                (DWORD)((wv.size() + 1) * sizeof(wchar_t)));
+        RegCloseKey(hk);
+        if (r != ERROR_SUCCESS) throw VesnaError("-setenv 失败: 写入注册表错误");
+        _putenv_s(k.s().c_str(), v.s().c_str());
+        return mkNone();
+    }
+    case 70: {
+        wchar_t buf[MAX_PATH];
+        if (_wgetcwd(buf, MAX_PATH) == nullptr) return mkStr("");
+        return mkStr(wideToUtf8(buf));
+    }
+    case 71: {
+        Value p = ev(0);
+        if (p.t() != Value::T::STR) throw VesnaError("-chdir 需要字符串");
+        if (_wchdir(utf8ToWide(p.s()).c_str()) != 0)
+            throw VesnaError("-chdir 失败: " + p.s());
+        return mkNone();
+    }
+    case 72: {
+        Value rootV = ev(0), pathV = ev(1), keyV = ev(2), valueV = ev(3);
+        HKEY hroot = (rootV.s() == "HKLM") ? HKEY_LOCAL_MACHINE
+                   : (rootV.s() == "HKCU") ? HKEY_CURRENT_USER : nullptr;
+        if (!hroot) throw VesnaError("-regwrite 未知根: " + rootV.s());
+        HKEY hk;
+        if (RegCreateKeyExW(hroot, utf8ToWide(pathV.s()).c_str(), 0, nullptr, 0,
+                            KEY_SET_VALUE, nullptr, &hk, nullptr) != ERROR_SUCCESS)
+            throw VesnaError("-regwrite 失败");
+        std::wstring wk = utf8ToWide(keyV.s()), wv = utf8ToWide(valueV.s());
+        LONG r = RegSetValueExW(hk, wk.c_str(), 0, REG_SZ,
+                                (const BYTE*)wv.c_str(),
+                                (DWORD)((wv.size() + 1) * sizeof(wchar_t)));
+        RegCloseKey(hk);
+        if (r != ERROR_SUCCESS) throw VesnaError("-regwrite 失败");
+        return mkNone();
+    }
+    case 73: {
+        Value rootV = ev(0), pathV = ev(1);
+        HKEY hroot = (rootV.s() == "HKLM") ? HKEY_LOCAL_MACHINE
+                   : (rootV.s() == "HKCU") ? HKEY_CURRENT_USER : nullptr;
+        if (!hroot) throw VesnaError("-regdelete 未知根: " + rootV.s());
+        LONG r = RegDeleteKeyW(hroot, utf8ToWide(pathV.s()).c_str());
+        if (r != ERROR_SUCCESS && r != ERROR_FILE_NOT_FOUND)
+            throw VesnaError("-regdelete 失败");
+        return mkNone();
+    }
+    case 74: {
+        Value cmd = ev(0);
+        if (cmd.t() != Value::T::STR) throw VesnaError("-shell 需要字符串");
+        _wsystem(utf8ToWide(cmd.s()).c_str());
+        return mkNone();
+    }
+    case 75: {
+        Value p = ev(0);
+        if (p.t() != Value::T::STR) throw VesnaError("-path_clean 需要字符串");
+        return mkStr(pathAbs(p.s()));
+    }
+
+    }
+    throw VesnaError("未知内置 -" + name);
+}
+
+// ============================================================
+// 入口
+// ============================================================
+std::string findVesnaHome() {
+    const char* env = getenv("VESNA_HOME");
+    if (env && *env) return env;
+    wchar_t buf[MAX_PATH];
+    DWORD n = GetModuleFileNameW(nullptr, buf, MAX_PATH);
+    if (n == 0) return ".";
+    std::wstring exe(buf, n);
+    size_t pos = exe.find_last_of(L"/\\");
+    std::wstring exe_dir = (pos == std::wstring::npos) ? L"." : exe.substr(0, pos);
+    size_t pos2 = exe_dir.find_last_of(L"/\\");
+    std::wstring home = (pos2 == std::wstring::npos) ? exe_dir : exe_dir.substr(0, pos2);
+    return wideToUtf8(home);
+}
+
+int runSource(const std::string& src, const std::vector<std::string>& argv,
+              const std::string& script_dir, const std::string& filename, bool catch_exit) {
+    Parser parser(preprocess(src), filename);
+    auto program = parser.parse();
+    if (!parser.errors.empty()) {
+        auto [line, msg] = parser.errors[0];
+        throw VesnaError(msg, line);
+    }
+    Interp interp(argv, script_dir);
+    try {
+        interp.run(program);
+    } catch (ExitSignal& e) {
+        if (catch_exit) return e.code;
+        std::exit(e.code);
+    } catch (BreakSignal&) {
+        throw VesnaError("break/continue 只能用于循环内");
+    } catch (ContinueSignal&) {
+        throw VesnaError("break/continue 只能用于循环内");
+    }
+    return 0;
+}
+
+int runFile(const std::string& path, const std::vector<std::string>& argv) {
+    std::string src = readFileUtf8(path);
+    return runSource(src, argv, parentDir(path), path, true);
+}
+
+void repl() {
+    std::cout << "Vesna " << VERSION << " — Scripts of spring\n输入空行退出\n\n";
+    std::string buf;
+    auto interp = std::make_shared<Interp>();
+    while (true) {
+        std::cout << (buf.empty() ? ">>> " : "... ");
+        std::cout.flush();
+        std::string line;
+        if (!std::getline(std::cin, line)) { std::cout << "\n"; break; }
+        if (line.empty() && buf.empty()) break;
+        if (!buf.empty()) buf += "\n";
+        buf += line;
+        try {
+            Parser parser(preprocess(buf), "<repl>");
+            auto program = parser.parse();
+            for (auto& s : program) interp->exec(s, interp->g);
+            buf.clear();
+        } catch (VesnaError& e) {
+            std::string m = e.str();
+            if (m.find("未闭合") != std::string::npos) continue;
+            std::cout << "错误: " << m << "\n";
+            buf.clear();
+        } catch (BreakSignal&) {
+            std::cout << "错误: break/continue 只能用于循环内\n";
+            buf.clear();
+        } catch (ContinueSignal&) {
+            std::cout << "错误: break/continue 只能用于循环内\n";
+            buf.clear();
+        } catch (ReturnSignal&) {
+            std::cout << "错误: back 只能用于函数内\n";
+            buf.clear();
+        }
+    }
+}
+
+}  // namespace vesna

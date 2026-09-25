@@ -1,0 +1,205 @@
+/* Vesna 标准库：json.ves */
+
+def json_parse(text)-
+-chars = []
+-for c in text-
+--#append(chars; c)
+-state = [chars; '1'; #len(chars)]
+-back(json_value(state))
+
+def json_peek(st)-
+-if st['2'] > st['3']-
+--back("")
+-back(st['1'][st['2']])
+
+def json_next(st)-
+-st['2'] += '1'
+
+def json_skip_ws(st)-
+-while st['2'] <= st['3']-
+--c = st['1'][st['2']]
+--if c == " " or c == "\t" or c == "\n" or c == "\r"-
+---st['2'] += '1'
+--else-
+---break
+
+def json_value(st)-
+-json_skip_ws(st)
+-c = json_peek(st)
+-if c == "{"-
+--back(json_object(st))
+-if c == "["-
+--back(json_array(st))
+-if c == "\""-
+--back(json_string(st))
+-if c == "t"-
+--json_literal(st; "true")
+--back(true)
+-if c == "f"-
+--json_literal(st; "false")
+--back(false)
+-if c == "n"-
+--json_literal(st; "null")
+--back(none)
+-back(json_number(st))
+
+def json_literal(st; word)-
+-i = '1'
+-while i <= #len(word)-
+--json_next(st)
+--i += '1'
+
+def json_string(st)-
+-json_skip_ws(st)
+-json_next(st)
+-out = ""
+-while st['2'] <= st['3']-
+--c = json_peek(st)
+--json_next(st)
+--if c == "\""-
+---back(out)
+--if c == "\\"-
+---e = json_peek(st)
+---json_next(st)
+---if e == "n"-
+----out = out + "\n"
+---elif e == "t"-
+----out = out + "\t"
+---elif e == "r"-
+----out = out + "\r"
+---elif e == "\""-
+----out = out + "\""
+---elif e == "\\"-
+----out = out + "\\"
+---else-
+----out = out + e
+--else-
+---out = out + c
+-back(out)
+
+def json_number(st)-
+-json_skip_ws(st)
+-start = st['2']
+-while st['2'] <= st['3']-
+--c = st['1'][st['2']]
+--if c == "-" or c == "+" or c == "." or c == "e" or c == "E"-
+---st['2'] += '1'
+--elif c >= "0" and c <= "9"-
+---st['2'] += '1'
+--else-
+---break
+-num_str = ""
+-i = start
+-while i < st['2']-
+--num_str = num_str + st['1'][i]
+--i += '1'
+-if #find(num_str; ".") > '0'-
+--back(#float(num_str))
+-if #find(num_str; "e") > '0'-
+--back(#float(num_str))
+-back(#int(num_str))
+
+def json_object(st)-
+-json_skip_ws(st)
+-json_next(st)
+-obj = {}
+-json_skip_ws(st)
+-if json_peek(st) == "}"-
+--json_next(st)
+--back(obj)
+-while true-
+--json_skip_ws(st)
+--k = json_string(st)
+--json_skip_ws(st)
+--json_next(st)
+--v = json_value(st)
+--obj[k] = v
+--json_skip_ws(st)
+--c = json_peek(st)
+--if c == ","-
+---json_next(st)
+---continue
+--json_next(st)
+--back(obj)
+
+def json_array(st)-
+-json_skip_ws(st)
+-json_next(st)
+-arr = []
+-json_skip_ws(st)
+-if json_peek(st) == "]"-
+--json_next(st)
+--back(arr)
+-while true-
+--v = json_value(st)
+--#append(arr; v)
+--json_skip_ws(st)
+--c = json_peek(st)
+--if c == ","-
+---json_next(st)
+---continue
+--json_next(st)
+--back(arr)
+
+def json_write(v)-
+-back(json_ser(v))
+
+def json_ser(v)-
+-t = #type(v)
+-if t == "none"-
+--back("null")
+-if t == "bool"-
+--if v-
+---back("true")
+--back("false")
+-if t == "int"-
+--back(#str(v))
+-if t == "float"-
+--back(#str(v))
+-if t == "str"-
+--back(json_esc(v))
+-if t == "list"-
+--back(json_arr(v))
+-if t == "group"-
+--back(json_arr(v))
+-if t == "dict"-
+--back(json_obj(v))
+-back("null")
+
+def json_esc(s)-
+-out = "\""
+-for c in s-
+--if c == "\""-
+---out = out + "\\\""
+--elif c == "\\"-
+---out = out + "\\\\"
+--elif c == "\n"-
+---out = out + "\\n"
+--elif c == "\t"-
+---out = out + "\\t"
+--elif c == "\r"-
+---out = out + "\\r"
+--else-
+---out = out + c
+-back(out + "\"")
+
+def json_arr(v)-
+-out = "["
+-first = true
+-for item in v-
+--if not first-
+---out = out + ","
+--first = false
+--out = out + json_ser(item)
+-back(out + "]")
+
+def json_obj(d)-
+-out = "{"
+-first = true
+-ks = #keys(d)
+-for k in ks-
+--if not first-
+---out = out + ","
+--first = false
+--out = out + json_esc(k) + ":" + json_ser(d[k])
+-back(out + "}")

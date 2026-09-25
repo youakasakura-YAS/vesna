@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build-cpp:
+    name: Build C++ + regression vs Python
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSYS2 (MinGW g++)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: mingw-w64-x86_64-gcc
+
+      - name: Build C++ interpreter
+        shell: msys2 {0}
+        run: |
+          cd src/cpp
+          g++ -std=c++17 -O3 -flto -static -Wall -Wextra vesna.cpp main.cpp -o vesna_cpp.exe -ladvapi32
+
+      - name: Smoke test
+        shell: msys2 {0}
+        run: |
+          cd src/cpp
+          ./vesna_cpp.exe --version
+          echo 'print("hi"),' | ./vesna_cpp.exe
+
+      - name: Regression (C++ vs Python, must match line-by-line)
+        shell: msys2 {0}
+        run: |
+          cd src/cpp
+          ./vesna_cpp.exe tests/regression.ves > cpp.out 2>&1 || true
+          python ../../src/vesna.py tests/regression.ves > py.out 2>&1 || true
+          diff cpp.out py.out && echo "REGRESSION MATCH"
+
+      - name: Example scripts (C++ vs Python)
+        shell: msys2 {0}
+        run: |
+          cd src/cpp
+          for f in ../../examples/*.ves; do
+            ./vesna_cpp.exe "$f" > cpp.out 2>&1 || true
+            python ../../src/vesna.py "$f" > py.out 2>&1 || true
+            diff cpp.out py.out || exit 1
+          done
+          echo "EXAMPLES MATCH"
+
+      - name: Upload C++ binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vesna_cpp-windows-x64
+          path: src/cpp/vesna_cpp.exe

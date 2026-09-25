@@ -1,0 +1,9 @@
+args = #args(),
+if #len(args) < '1'-
+-print("用法: vesna sort.ves <文件>"),
+-#exit('1'),
+
+lines = #lines(#fread(args['1'])),
+sorted_lines = #sort(lines),
+for line in sorted_lines-
+-print(line),

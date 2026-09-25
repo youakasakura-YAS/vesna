@@ -1,0 +1,20 @@
+/* Vesna 标准库：stat.ves */
+
+def stat_count_by(items; key)-
+-result = {}
+-for item in items-
+-val = item[key]
+-if #has_key(result; val)-
+--result[val] += '1'
+-else-
+--result[val] = '1'
+-back(result)
+
+def stat_unique(items)-
+-seen = {}
+-out = []
+-for item in items-
+-if not #has_key(seen; item)-
+--seen[item] = true
+--#append(out; item)
+-back(out)

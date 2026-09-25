@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+
+# 系统
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# 临时
+*.tmp
+*.log
+_test.log
+
+# 发布产物
+release/
+bin/*.exe
+
+# PyInstaller 运行库（随 exe 分发，不提交源码树）
+bin/_internal/
+
+# C++ 构建产物
+*.o
+*.obj
+
+# Node（VSCode 插件依赖）
+node_modules/
+
+# VSCode 插件打包产物
+*.vsix
+
+# LSP 缓存
+__pycache__/
+
+# 临时/测试残留
+*.tmp
+*_test.exe
+_tmp.ves
+
+# 回归基准数据（10 万行日志，供 bench 使用）
+!src/cpp/tests/big.log

@@ -1,0 +1,18 @@
+args = #args(),
+if #len(args) < '1'-
+-print("用法: vesna stat.ves <文件>"),
+-#exit('1'),
+
+content = #fread(args['1']),
+words = #findall(content; "[^ \t\n\r]+"),
+counts = {},
+
+for w in words-
+-if #has_key(counts; w)-
+--counts[w] += '1'
+-else-
+--counts[w] = '1'
+
+ks = #keys(counts),
+for k in ks-
+-print(k + ": " + #str(counts[k])),

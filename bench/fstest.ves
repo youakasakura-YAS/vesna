@@ -1,0 +1,22 @@
+/* 测试文件系统内置 */
+
+print("当前目录: " + #cwd()),
+
+#mkdir("C:\\Vesna\\bench\\_test"),
+print("已建 _test 目录"),
+
+#fwrite("C:\\Vesna\\bench\\_test\\a.txt"; "hello"),
+#copy("C:\\Vesna\\bench\\_test\\a.txt"; "C:\\Vesna\\bench\\_test\\b.txt"),
+print("已复制 a.txt → b.txt"),
+
+#rename("C:\\Vesna\\bench\\_test\\b.txt"; "C:\\Vesna\\bench\\_test\\c.txt"),
+print("已重命名 b.txt → c.txt"),
+
+print("_test 目录内容:"),
+for f in #ls("C:\\Vesna\\bench\\_test")-
+-print("  " + f),
+
+#rmdir("C:\\Vesna\\bench\\_test"),
+print("已删除 _test 目录"),
+
+print("VESNA_HOME = " + #getenv("VESNA_HOME")),

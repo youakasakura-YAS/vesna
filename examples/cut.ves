@@ -1,0 +1,14 @@
+args = #args(),
+if #len(args) < '3'-
+-print("用法: vesna cut.ves <分隔符> <列号> <文件>"),
+-#exit('1'),
+
+sep = args['1'],
+col = #int(args['2']),
+path = args['3'],
+lines = #lines(#fread(path)),
+
+for line in lines-
+-parts = #split(line; sep),
+-if col <= #len(parts)-
+--print(parts[col]),

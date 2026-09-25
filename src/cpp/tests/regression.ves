@@ -1,0 +1,87 @@
+/* Vesna 回归测试：标准库与关键内置函数 */
+import json,
+import csv,
+import text,
+import stat,
+
+/* JSON */
+j0 = json_parse("[1, 2, 3]"),
+print("R1: " + #str(#type(j0))),
+
+j = json_parse("{\"a\": 1, \"b\": [true, null, \"x\"]}"),
+print("R2: " + #str(j["b"]['2'])),
+print("R3: " + json_write(j)),
+
+/* 字符串内置 */
+print("R4: " + #up("hello")),
+print("R5: " + #sub("abcdef"; '2'; '5')),
+print("R6: " + #join(#split("a,b,c"; ","); "|")),
+print("R7: " + #str(#find("hello"; "l"))),
+print("R8: " + #str(#len(#lines("a\nb\nc")))),
+print("R9: " + #replace("aaa"; "a"; "b")),
+print("R10: " + #str(#char_at("Vesna"; '3'))),
+print("R11: " + #str(#ord("A")) + "," + #chr('66')),
+print("R12: " + #str(#findall("a1 b22 c333"; "[0-9]+"))),
+print("R13: " + #str(#gsub("2026-09-25"; "-"; "/"))),
+
+/* 数学 */
+print("R14: " + #str(#min('3'; '1'; '2'))),
+print("R15: " + #str(#max(['1'; '5'; '3']))),
+print("R16: " + #str(#sum(['1'; '2'; '3']))),
+print("R17: " + #str(#pow('2'; '10'))),
+print("R18: " + #str(#round('3.14159'; '2'))),
+
+/* 容器 */
+lst = ['3'; '1'; '2'],
+#append(lst; '4'),
+print("R19: " + #str(lst)),
+print("R20: " + #str(#sort(lst))),
+print("R21: " + #str(#reverse(lst))),
+print("R22: " + #str(#slice(lst; '2'; '4'))),
+print("R23: " + #str(#contains(lst; '1'))),
+d2 = {"x": '1'; "y": '2'},
+print("R24: " + #str(#keys(d2))),
+print("R25: " + #str(#has_key(d2; "z"))),
+print("R26: " + #str(#type(d2)) + "/" + #str(#type(lst)) + "/" + #str(#type(('1'; '2')))),
+
+/* 函数与闭包 */
+def fib(n)-
+-if n <= '2'-
+--back('1')
+-back(fib(n - '1') + fib(n - '2'))
+print("R27: " + #str(fib('10'))),
+
+def greet(who = "Vesna")-
+-back("Hello, " + who)
+print("R28: " + greet()),
+print("R29: " + greet("Doubao")),
+
+/* map/filter/reduce */
+def double(x)-
+-back(x * '2')
+def is_big(x)-
+-back(x > '2')
+def add(a; b)-
+-back(a + b)
+print("R30: " + #str(#map(lst; "double"))),
+print("R31: " + #str(#filter(lst; "is_big"))),
+print("R32: " + #str(#reduce(lst; "add"; '0'))),
+
+/* try/catch */
+try-
+-t = #int("abc"),
+-print("R33a: 不应到这里"),
+catch e-
+-print("R33b: 捕获 " + e),
+
+/* 插值字符串 */
+name = "spring",
+print("R34: " + #f"hello (name)"),
+
+/* for/while */
+total = '0',
+for i in ['1'; '2'; '3']-
+-total += i,
+print("R35: " + #str(total)),
+
+print("REGRESSION_DONE"),

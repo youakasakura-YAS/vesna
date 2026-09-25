@@ -1,0 +1,156 @@
+// main.cpp — Vesna 0.3.0 C++ 命令行入口
+#include "vesna.hpp"
+
+#include <iostream>
+#include <string>
+#include <vector>
+
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+
+namespace vesna {
+
+// Vesna 内置安装程序（与 Python 版一致）
+static const char* INSTALL_SCRIPT = R"VES(
+/* Vesna 内置安装程序 */
+
+src = #cwd(),
+args = #args(),
+
+target = "C:\\Vesna",
+if #len(args) >= '1'-
+-target = #path_clean(args['1']),
+
+print("=== Vesna 安装程序 ==="),
+print("源目录: " + src),
+print("目标目录: " + target),
+print(""),
+
+print("[1/6] 检查源文件..."),
+prefix = #sub(target; '1'; '3'),
+if not #fexists(prefix)-
+-print("错误: 盘符不存在 " + prefix),
+-#exit('1'),
+if not #fexists(src + "\\vesna.exe")-
+-print("  错误: 找不到 vesna.exe"),
+-#exit('1'),
+if not #fexists(src + "\\lib\\csv.ves")-
+-print("  错误: 找不到 lib\\csv.ves"),
+-#exit('1'),
+print("  OK"),
+
+print("[2/6] 创建目录..."),
+#mkdir(target),
+#mkdir(target + "\\bin"),
+#mkdir(target + "\\lib"),
+#mkdir(target + "\\examples"),
+#mkdir(target + "\\docs"),
+print("  OK"),
+
+print("[3/6] 复制文件..."),
+#copy(src + "\\vesna.exe"; target + "\\bin\\vesna.exe"),
+if #fexists(src + "\\vesna.ico")-
+-#copy(src + "\\vesna.ico"; target + "\\vesna.ico"),
+print("  vesna.exe"),
+files = #ls(src + "\\lib"),
+for f in files-
+-#copy(src + "\\lib\\" + f; target + "\\lib\\" + f),
+print("  lib\\ (" + #str(#len(files)) + " 个文件)"),
+files = #ls(src + "\\docs"),
+for f in files-
+-#copy(src + "\\docs\\" + f; target + "\\docs\\" + f),
+print("  docs\\ (" + #str(#len(files)) + " 个文件)"),
+files = #ls(src + "\\examples"),
+for f in files-
+-#copy(src + "\\examples\\" + f; target + "\\examples\\" + f),
+print("  examples\\ (" + #str(#len(files)) + " 个文件)"),
+if #fexists(src + "\\README.md")-
+-#copy(src + "\\README.md"; target + "\\README.md"),
+if #fexists(src + "\\LICENSE")-
+-#copy(src + "\\LICENSE"; target + "\\LICENSE"),
+
+print("[4/6] 设置环境变量..."),
+#setenv("VESNA_HOME"; target),
+print("  VESNA_HOME = " + target),
+old_path = #getenv("PATH"),
+bin_path = target + "\\bin",
+if #find(old_path; bin_path) == '0'-
+-#setenv("PATH"; old_path + ";" + bin_path),
+-print("  PATH 已追加 " + bin_path),
+else-
+-print("  PATH 已包含 " + bin_path),
+print("[5/6] 注册文件关联..."),
+#regwrite("HKCU"; "Software\\Classes\\.ves"; ""; "VesnaScript"),
+#regwrite("HKCU"; "Software\\Classes\\.ves\\ShellNew"; "NullFile"; ""),
+#regwrite("HKCU"; "Software\\Classes\\VesnaScript"; ""; "Vesna 脚本"),
+#regwrite("HKCU"; "Software\\Classes\\VesnaScript\\DefaultIcon"; ""; target + "\\vesna.ico"),
+#regwrite("HKCU"; "Software\\Classes\\VesnaScript\\shell\\run"; ""; "用 Vesna 运行"),
+#regwrite("HKCU"; "Software\\Classes\\VesnaScript\\shell\\run\\command"; ""; "\"" + target + "\\bin\\vesna.exe\" \"%1\""),
+print("  OK"),
+print("[6/6] 安装完成"),
+print(""),
+print("请重开 cmd 后输入 vesna 测试。"),
+)VES";
+
+int mainCli(int argc, char** argv) {
+    // 控制台 UTF-8，保证中文输出正确
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+
+    // 关闭 iostream 与 C stdio 的同步（提升输出吞吐）
+    std::ios::sync_with_stdio(false);
+    std::cin.tie(nullptr);
+
+    if (argc < 2) { repl(); return 0; }
+
+    std::string arg = argv[1];
+
+    if (arg == "--install") {
+        std::vector<std::string> args;
+        for (int i = 2; i < argc; ++i) args.emplace_back(argv[i]);
+        try {
+            int code = runSource(INSTALL_SCRIPT, args, ".",
+                                 "<install>", true);
+            return code ? code : 0;
+        } catch (VesnaError& e) {
+            std::cerr << "安装失败: " << e.str() << std::endl;
+            return 1;
+        }
+    }
+
+    if (arg == "--version") {
+        std::cout << "Vesna " << VERSION << std::endl;
+        return 0;
+    }
+
+    if (arg == "--help") {
+        std::cout << "用法:\n"
+                  << "  vesna <脚本.ves> [参数...]   运行脚本\n"
+                  << "  vesna                        进入 REPL\n"
+                  << "  vesna --install              安装 Vesna\n"
+                  << "  vesna --version              显示版本\n"
+                  << "  vesna --help                 显示帮助\n";
+        return 0;
+    }
+
+    std::string path = arg;
+    if (!fileExists(path)) {
+        std::cerr << "找不到文件: " << path << std::endl;
+        return 1;
+    }
+    std::vector<std::string> args;
+    for (int i = 2; i < argc; ++i) args.emplace_back(argv[i]);
+    try {
+        runFile(path, args);
+    } catch (VesnaError& e) {
+        std::cerr << "错误: " << e.str() << std::endl;
+        return 1;
+    }
+    return 0;
+}
+
+}  // namespace vesna
+
+int main(int argc, char** argv) {
+    return vesna::mainCli(argc, argv);
+}

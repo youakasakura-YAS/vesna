@@ -1,0 +1,40 @@
+/* 文件系统测试（C++ 版对照） */
+base = "F:\\Vesna\\src\\cpp\\tests\\_fs_test",
+
+/* FS1: 写入+读回 */
+#mkdir(base),
+#fwrite(base + "\\a.txt"; "hello vesna\nline2"),
+print("FS1: 读回=" + #fread(base + "\\a.txt")),
+
+/* FS2: 追加 */
+#fappend(base + "\\a.txt"; "\nline3"),
+print("FS2: 追加后=" + #str(#len(#lines(#fread(base + "\\a.txt")))) + "行"),
+
+/* FS3: 中文路径 */
+#fwrite(base + "\\中文文件.txt"; "你好世界"),
+print("FS3: 中文读回=" + #fread(base + "\\中文文件.txt")),
+
+/* FS4: mkdir 嵌套 + copy 文件 */
+#mkdir(base + "\\sub\\deep"),
+#copy(base + "\\a.txt"; base + "\\sub\\a_copy.txt"),
+print("FS4: 拷贝存在=" + #str(#fexists(base + "\\sub\\a_copy.txt"))),
+
+/* FS5: copy 目录 */
+#copy(base + "\\sub"; base + "\\sub2"),
+print("FS5: 目录拷贝=" + #str(#fexists(base + "\\sub2\\deep")) + "/" + #str(#fexists(base + "\\sub2\\a_copy.txt"))),
+
+/* FS6: glob + ls */
+files = #glob(base + "\\*.txt"),
+print("FS6: glob=" + #str(#len(files))),
+dirs = #ls(base),
+print("FS6: ls=" + #str(#len(dirs))),
+
+/* FS7: rename */
+#rename(base + "\\a.txt"; base + "\\b.txt"),
+print("FS7: rename=" + #str(#fexists(base + "\\b.txt")) + "/" + #str(#fexists(base + "\\a.txt"))),
+
+/* FS8: 递归删除 */
+#rmdir(base),
+print("FS8: 删除后=" + #str(#fexists(base))),
+
+print("FS_DONE"),
