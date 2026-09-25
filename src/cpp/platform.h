@@ -80,6 +80,17 @@ inline std::string httpRequest(const std::string& url, const std::string& data, 
     return out;
 }
 
+// ---- FFI（加载系统库与符号） ----
+inline void* ffiLoad(const std::string& dll) {
+    HMODULE h = LoadLibraryW(utf8ToWide(dll).c_str());
+    return h ? (void*)h : nullptr;
+}
+inline void* ffiSym(void* handle, const std::string& name) {
+    if (!handle) return nullptr;
+    FARPROC p = GetProcAddress((HMODULE)handle, name.c_str());
+    return p ? (void*)p : nullptr;
+}
+
 inline int tcpPing(const std::string& host, int port) {
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return -1;
@@ -115,6 +126,7 @@ inline int tcpPing(const std::string& host, int port) {
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <dlfcn.h>
 
 namespace vesna {
 
@@ -170,6 +182,16 @@ inline std::string httpRequest(const std::string& url, const std::string& data, 
     while ((n = fread(buf, 1, sizeof(buf), p)) > 0) out.append(buf, n);
     pclose(p);
     return out;
+}
+
+// ---- FFI（加载系统库与符号） ----
+inline void* ffiLoad(const std::string& dll) {
+    void* h = dlopen(dll.c_str(), RTLD_NOW | RTLD_GLOBAL);
+    return h;
+}
+inline void* ffiSym(void* handle, const std::string& name) {
+    if (!handle) return nullptr;
+    return dlsym(handle, name.c_str());
 }
 
 inline int tcpPing(const std::string& host, int port) {

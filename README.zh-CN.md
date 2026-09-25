@@ -6,7 +6,7 @@
 
 [English](README.md) | [中文](README.zh-CN.md)
 
-![version](https://img.shields.io/badge/version-1.1.0-blue)
+![version](https://img.shields.io/badge/version-1.2.0-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![platform](https://img.shields.io/badge/platform-Windows-x64-lightgrey)
 
@@ -25,7 +25,7 @@
 
 ### 1. 下载
 
-从 [Releases](../../releases) 下载 `vesna-1.1.0-windows-x64.zip` 并解压到任意目录。
+从 [Releases](../../releases) 下载 `vesna-1.2.0-windows-x64.zip` 并解压到任意目录。
 
 | 文件 | 说明 |
 |---|---|
@@ -147,11 +147,16 @@ vesna csv2json.ves data.csv
 
 ## 并发 / 网络 / 二进制（1.1）
 
-第二梯队内置，不改语法、小写下划线命名，详见 [docs/builtins](docs/builtins.md)：
+第二/三梯队内置，不改语法、小写下划线命名，详见 [docs/builtins](docs/builtins.md)：
 
 - **并发**：`#thread("fn"; arg...)`（线程隔离全局变量副本）、`#thread_join(id)`、`#thread_count()`、`#lock("name")` / `#unlock("name")`（命名互斥锁）
 - **网络**（需 PATH 中有 curl）：`#http_get(url)`、`#http_post(url; body)`、`#tcp_ping(host; port)`（原生 TCP 探测）
 - **二进制**：`#bin_read(path)` / `#bin_write(path; bytes)`、`#bin_hex` / `#bin_unhex`、`#bin_base64_encode` / `#bin_base64_decode`
+Tier 3 (1.2) — **Data / Crypto / Process / FFI**:
+- **数据**：`#json_encode` / `#json_decode`、`#re_groups`（正则捕获组）
+- **加密**：`#sha256`、`#aes_encrypt` / `#aes_decrypt`（AES-256-CBC + PKCS7）
+- **进程**：`#proc_run(cmd)`（返回 `{exit; output}`）
+- **FFI**：`#ffi_call("dll"; "func"; arg...)` 直接调用系统库函数
 ## 标准库
 
 模块放在 `C:\Vesna\lib\`（或随本仓库分发），用 `import xxx` 使用：

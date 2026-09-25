@@ -413,6 +413,39 @@ print(#f"name=(name), age=(age)"),
 | `#bin_base64_decode(s)` | base64 字符串 → 字节列表 |
 
 字节就是普通整数，现有列表操作（`#len`、`#slice`、`#append` 等）可直接用于二进制数据。
+## 1.2 数据 / 加密 / 进程 / FFI
+
+### 数据
+
+| 函数 | 说明 |
+|---|---|
+| `#json_encode(v)` | 将任意值序列化为 JSON 字符串（dict 保持插入顺序） |
+| `#json_decode(s)` | 解析 JSON 为 dict / list / int / float / string / bool / none；非法输入报错 |
+| `#re_groups(s; pattern)` | 返回首个正则匹配的捕获组列表：组 0 为整段匹配，未匹配组为 `none`；无匹配返回空列表 |
+
+### 加密
+
+| 函数 | 说明 |
+|---|---|
+| `#sha256(s)` | SHA-256 十六进制摘要（64 字符），已按 FIPS 180-4 向量验证 |
+| `#aes_encrypt(data; key)` | AES-256-CBC + PKCS7，密钥经 SHA-256 派生，返回 base64（已按 FIPS-197 验证） |
+| `#aes_decrypt(b64; key)` | 用相同密钥解密 `#aes_encrypt` 产生的 base64 密文 |
+
+说明：AES 采用固定全零 IV 与 SHA-256 派生密钥——适合本地工具与静态数据加密，不作为高安全通道中认证加密的替代。
+
+### 进程
+
+| 函数 | 说明 |
+|---|---|
+| `#proc_run(cmd)` | 运行命令，返回 dict `{"exit": 退出码; "output": 捕获的 stdout}` |
+
+### FFI（Windows x64；Linux/macOS 经 dlopen）
+
+| 函数 | 说明 |
+|---|---|
+| `#ffi_call("dll"; "func"; arg...)` | 加载共享库并调用 C 函数；参数支持 int / 字符串（字符串以 `char*` 传入），最多 6 个；返回 64 位整数结果 |
+
+示例：`#ffi_call("kernel32.dll"; "GetTickCount")`、`#ffi_call("kernel32.dll"; "GetModuleHandleA"; "kernel32.dll")`。
 
 ## 完整例子
 

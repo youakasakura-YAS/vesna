@@ -2,7 +2,16 @@
 
 [English](CHANGELOG.md) | [中文](CHANGELOG.zh-CN.md)
 
-## 1.1.0
+## 1.2.0
+
+### 新增
+- **数据内置**：`#json_encode(v)` / `#json_decode(s)`（原生 JSON，dict 保持插入顺序）、`#re_groups(s; pattern)`（正则捕获组，未匹配组为 `none`）
+- **加密内置**：`#sha256(s)`（已按 FIPS 180-4 向量验证）、`#aes_encrypt(data; key)` / `#aes_decrypt(b64; key)`（AES-256-CBC + PKCS7，密钥经 SHA-256 派生，base64 输出，已按 FIPS-197 验证）；新增纯 C++ 的 `src/cpp/crypto.h` 与 `crypto_selftest.cpp` 向量校验
+- **进程内置**：`#proc_run(cmd)` 返回 `{"exit": 退出码; "output": stdout}`
+- **FFI**：`#ffi_call("dll"; "func"; arg...)` —— 从共享库调用 C 函数（Windows x64 用 LoadLibrary/GetProcAddress；Linux/macOS 用 dlopen/dlsym）；参数支持 int / 字符串（`char*`），最多 6 个，返回 64 位整数结果
+- 新增冒烟测试 `tests/tier3.ves`（+ `tier3_data.json`），golden 由 C++ 生成
+
+## 1.1.0## 1.1.0
 
 ### 新增
 - **并发内置**：`#thread("fn"; arg...)`（在新线程中运行函数，全局变量按副本隔离，返回线程 id）、`#thread_join(id)`（等待并取回 `back` 值，线程出错则重新抛出）、`#thread_count()`、`#lock("name")` / `#unlock("name")`（命名互斥锁，用于共享资源保护）；`print` 输出已互斥，未 join 的线程在退出时自动等待

@@ -1,0 +1,21 @@
+﻿json name = vesna
+json tags = [lang;scripting]
+json nested = tier3
+json encode = {"name":"vesna","version":"1.2.0","tags":["lang","scripting"],"meta":{"level":"tier3"}}
+json arr = ['1';'2';'3']
+json null = none
+json esc = a
+b
+groups = [file-2026-09-25;2026;09;25]
+groups2 = [abc;b;c]
+groups3 = []
+sha256 empty = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+sha256 abc = ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
+aes enc len = '24'
+aes roundtrip = hello world
+aes wrong key = �
+��y ��eˬ>
+aes block16 roundtrip = 0123456789abcdef
+aes empty roundtrip = 
+proc exit = '0'
+proc output = vesna-ok

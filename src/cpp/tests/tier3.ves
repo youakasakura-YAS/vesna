@@ -1,0 +1,35 @@
+/* 1.2 第三梯队内置 - 冒烟测试（确定性部分，进 golden） */
+/* JSON */
+d = #json_decode(#fread("tier3_data.json"))
+print("json name ="; d["name"])
+print("json tags ="; d["tags"])
+print("json nested ="; d["meta"]["level"])
+print("json encode ="; #json_encode(d))
+arr = #json_decode("[1,2,3]")
+print("json arr ="; arr)
+print("json null ="; #json_decode("null"))
+print("json esc ="; #json_decode("\"a\nb\""))
+
+/* 正则捕获组 */
+print("groups ="; #re_groups("file-2026-09-25.log"; "file-(\\d+)-(\\d+)-(\\d+)"))
+print("groups2 ="; #re_groups("abc"; "a(b)(c)?"))
+print("groups3 ="; #re_groups("hello"; "xyz"))
+
+/* SHA-256（FIPS 180-4 向量） */
+print("sha256 empty ="; #sha256(""))
+print("sha256 abc ="; #sha256("abc"))
+
+/* AES-256-CBC（密钥经 SHA-256 派生，base64 输出） */
+enc1 = #aes_encrypt("hello world"; "my-key")
+print("aes enc len ="; #len(enc1))
+print("aes roundtrip ="; #aes_decrypt(enc1; "my-key"))
+print("aes wrong key ="; #aes_decrypt(enc1; "other-key"))
+enc2 = #aes_encrypt("0123456789abcdef"; "k")
+print("aes block16 roundtrip ="; #aes_decrypt(enc2; "k"))
+enc3 = #aes_encrypt(""; "k")
+print("aes empty roundtrip ="; #aes_decrypt(enc3; "k"))
+
+/* 进程 */
+pr = #proc_run("cmd /c echo vesna-ok")
+print("proc exit ="; pr["exit"])
+print("proc output ="; #trim(pr["output"]))

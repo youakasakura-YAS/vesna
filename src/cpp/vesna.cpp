@@ -1,4 +1,4 @@
-// vesna.cpp — Vesna 1.1.0 C++ 实现：词法 / 预处理 / 解析
+// vesna.cpp — Vesna 1.2.0 C++ 实现：词法 / 预处理 / 解析
 // 从 src/vesna.py 移植，保持语言语义一致
 #include "vesna.hpp"
 
@@ -22,6 +22,7 @@
 #include <sstream>
 #include <thread>
 #include <mutex>
+#include "crypto.h"
 
 #include "platform.h"
 
@@ -29,7 +30,7 @@ namespace vesna {
 
 static std::string parentDir(const std::string& path);
 static std::string strFloat(double f);
-const std::string VERSION = "1.1.0";
+const std::string VERSION = "1.2.0";
 
 
 // ============================================================
@@ -484,6 +485,8 @@ static const std::set<std::string> BUILTINS = {
     "http_get", "http_post", "tcp_ping",
     "bin_read", "bin_write", "bin_hex", "bin_unhex",
     "bin_base64_encode", "bin_base64_decode",
+    "json_encode", "json_decode", "re_groups", "sha256",
+    "aes_encrypt", "aes_decrypt", "proc_run", "ffi_call",
 };
 
 static const std::set<std::string> TYPE_KEYWORDS = {"int", "str", "float", "list", "dict", "bool"};
@@ -2331,13 +2334,240 @@ static std::regex& cachedRegex(const std::string& pat) {
 }
 
 // ============================================================
+// 第三梯队辅助：JSON / 进程
+// ============================================================
+static void appendUtf8(std::string& out, unsigned cp) {
+    if (cp < 0x80) out += (char)cp;
+    else if (cp < 0x800) { out += (char)(0xC0 | (cp >> 6)); out += (char)(0x80 | (cp & 0x3F)); }
+    else if (cp < 0x10000) { out += (char)(0xE0 | (cp >> 12)); out += (char)(0x80 | ((cp >> 6) & 0x3F)); out += (char)(0x80 | (cp & 0x3F)); }
+    else { out += (char)(0xF0 | (cp >> 18)); out += (char)(0x80 | ((cp >> 12) & 0x3F)); out += (char)(0x80 | ((cp >> 6) & 0x3F)); out += (char)(0x80 | (cp & 0x3F)); }
+}
+
+static std::string jsonEscape(const std::string& s) {
+    std::string out = "\"";
+    for (unsigned char c : s) {
+        switch (c) {
+            case '"': out += "\\\""; break;
+            case '\\': out += "\\\\"; break;
+            case '\n': out += "\\n"; break;
+            case '\r': out += "\\r"; break;
+            case '\t': out += "\\t"; break;
+            case '\b': out += "\\b"; break;
+            case '\f': out += "\\f"; break;
+            default:
+                if (c < 0x20) {
+                    char buf[8];
+                    std::snprintf(buf, sizeof(buf), "\\u%04x", c);
+                    out += buf;
+                } else out += (char)c;
+        }
+    }
+    return out + "\"";
+}
+
+static std::string jsonWrite(const Value& v) {
+    switch (v.t()) {
+        case Value::T::NONE: return "null";
+        case Value::T::BOOL: return v.b() ? "true" : "false";
+        case Value::T::INT: return std::to_string(v.i());
+        case Value::T::FLOAT: {
+            std::string n = floatToStr(v.f());
+            if (n.find('.') == std::string::npos && n.find('e') == std::string::npos &&
+                n.find('E') == std::string::npos) n += ".0";
+            return n;
+        }
+        case Value::T::STR: return jsonEscape(v.s());
+        case Value::T::LIST: case Value::T::GROUP: {
+            const auto& items = v.t() == Value::T::LIST ? v.list()->items : v.group()->items;
+            std::string out = "[";
+            for (size_t i = 0; i < items.size(); ++i) {
+                if (i) out += ",";
+                out += jsonWrite(items[i]);
+            }
+            return out + "]";
+        }
+        case Value::T::DICT: {
+            std::string out = "{";
+            for (size_t i = 0; i < v.dict()->pairs.size(); ++i) {
+                if (i) out += ",";
+                const auto& kv = v.dict()->pairs[i];
+                std::string key = kv.first.t() == Value::T::STR ? kv.first.s() : fmt(kv.first);
+                out += jsonEscape(key) + ":" + jsonWrite(kv.second);
+            }
+            return out + "}";
+        }
+    }
+    return "null";
+}
+
+struct JsonParser {
+    const std::string& s;
+    size_t pos = 0;
+    bool fail = false;
+    explicit JsonParser(const std::string& str) : s(str) {}
+    void ws() {
+        while (pos < s.size() && (s[pos]==' '||s[pos]=='\t'||s[pos]=='\n'||s[pos]=='\r')) ++pos;
+    }
+    Value parseValue() {
+        ws();
+        if (pos >= s.size()) { fail = true; return mkNone(); }
+        char c = s[pos];
+        if (c == '{') return parseObject();
+        if (c == '[') return parseArray();
+        if (c == '"') return mkStr(parseString());
+        if (c == 't') { if (s.compare(pos, 4, "true") == 0) { pos += 4; return mkBool(true); } fail = true; return mkNone(); }
+        if (c == 'f') { if (s.compare(pos, 5, "false") == 0) { pos += 5; return mkBool(false); } fail = true; return mkNone(); }
+        if (c == 'n') { if (s.compare(pos, 4, "null") == 0) { pos += 4; return mkNone(); } fail = true; return mkNone(); }
+        if (c == '-' || (c >= '0' && c <= '9')) return parseNumber();
+        fail = true;
+        return mkNone();
+    }
+    std::string parseString() {
+        ++pos;
+        std::string out;
+        while (pos < s.size() && s[pos] != '"') {
+            if (s[pos] == '\\' && pos + 1 < s.size()) {
+                char e = s[pos + 1];
+                pos += 2;
+                switch (e) {
+                    case '"': out += '"'; break;
+                    case '\\': out += '\\'; break;
+                    case '/': out += '/'; break;
+                    case 'b': out += '\b'; break;
+                    case 'f': out += '\f'; break;
+                    case 'n': out += '\n'; break;
+                    case 'r': out += '\r'; break;
+                    case 't': out += '\t'; break;
+                    case 'u': {
+                        if (pos + 4 <= s.size()) {
+                            unsigned cp = 0;
+                            bool ok = true;
+                            for (int k = 0; k < 4; ++k) {
+                                char h = s[pos + k];
+                                cp <<= 4;
+                                if (h >= '0' && h <= '9') cp |= h - '0';
+                                else if (h >= 'a' && h <= 'f') cp |= h - 'a' + 10;
+                                else if (h >= 'A' && h <= 'F') cp |= h - 'A' + 10;
+                                else { ok = false; break; }
+                            }
+                            pos += 4;
+                            if (ok) {
+                                if (cp >= 0xD800 && cp <= 0xDBFF && pos + 1 < s.size() &&
+                                    s[pos] == '\\' && s[pos + 1] == 'u') {
+                                    unsigned lo = 0;
+                                    bool ok2 = true;
+                                    for (int k = 0; k < 4; ++k) {
+                                        char h = s[pos + 2 + k];
+                                        lo <<= 4;
+                                        if (h >= '0' && h <= '9') lo |= h - '0';
+                                        else if (h >= 'a' && h <= 'f') lo |= h - 'a' + 10;
+                                        else if (h >= 'A' && h <= 'F') lo |= h - 'A' + 10;
+                                        else { ok2 = false; break; }
+                                    }
+                                    if (ok2 && lo >= 0xDC00 && lo <= 0xDFFF) {
+                                        pos += 6;
+                                        cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
+                                    }
+                                }
+                                appendUtf8(out, cp);
+                            }
+                        }
+                        break;
+                    }
+                    default: out += e; break;
+                }
+            } else {
+                out += s[pos];
+                ++pos;
+            }
+        }
+        if (pos < s.size()) ++pos;
+        return out;
+    }
+    Value parseNumber() {
+        size_t start = pos;
+        if (pos < s.size() && s[pos] == '-') ++pos;
+        while (pos < s.size() && (std::isdigit((unsigned char)s[pos]) || s[pos]=='.' ||
+               s[pos]=='e' || s[pos]=='E' || s[pos]=='+' || s[pos]=='-')) ++pos;
+        std::string num = s.substr(start, pos - start);
+        if (num.find_first_of(".eE") != std::string::npos) {
+            try { return mkFloat(std::stod(num)); } catch (...) { fail = true; return mkNone(); }
+        }
+        try { return mkInt(std::stoll(num)); }
+        catch (...) {
+            try { return mkFloat(std::stod(num)); } catch (...) { fail = true; return mkNone(); }
+        }
+    }
+    Value parseArray() {
+        ++pos;
+        Value out = mkList();
+        ws();
+        if (pos < s.size() && s[pos] == ']') { ++pos; return out; }
+        while (pos < s.size()) {
+            Value v = parseValue();
+            if (fail) return mkNone();
+            out.list()->items.push_back(v);
+            ws();
+            if (pos < s.size() && s[pos] == ',') { ++pos; continue; }
+            if (pos < s.size() && s[pos] == ']') { ++pos; break; }
+            fail = true;
+            return mkNone();
+        }
+        return out;
+    }
+    Value parseObject() {
+        ++pos;
+        Value out = mkDict();
+        ws();
+        if (pos < s.size() && s[pos] == '}') { ++pos; return out; }
+        while (pos < s.size()) {
+            ws();
+            if (pos >= s.size() || s[pos] != '"') { fail = true; return mkNone(); }
+            std::string key = parseString();
+            ws();
+            if (pos >= s.size() || s[pos] != ':') { fail = true; return mkNone(); }
+            ++pos;
+            Value v = parseValue();
+            if (fail) return mkNone();
+            out.dict()->pairs.emplace_back(mkStr(key), v);
+            ws();
+            if (pos < s.size() && s[pos] == ',') { ++pos; continue; }
+            if (pos < s.size() && s[pos] == '}') { ++pos; break; }
+            fail = true;
+            return mkNone();
+        }
+        return out;
+    }
+};
+
+static std::pair<int, std::string> procRun(const std::string& cmd) {
+#ifdef _WIN32
+    FILE* p = _popen(cmd.c_str(), "r");
+#else
+    FILE* p = popen(cmd.c_str(), "r");
+#endif
+    if (!p) return { -1, "" };
+    std::string out;
+    char buf[4096];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), p)) > 0) out.append(buf, n);
+#ifdef _WIN32
+    int rc = _pclose(p);
+#else
+    int rc = pclose(p);
+    if (rc != -1) rc = WEXITSTATUS(rc);
+#endif
+    return { rc, out };
+}
+
+// ============================================================
 // 内置函数
 // ============================================================
 Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr<Expr>>& args,
                       const std::shared_ptr<Env>& env) {
     auto ev = [&](size_t i) -> Value { return eval(args[i], env); };
     auto argc = [&]() -> size_t { return args.size(); };
-    static const std::unordered_map<std::string, int> g_bi = {{"up",1},{"down",2},{"len",3},{"sub",4},{"split",5},{"join",6},{"find",7},{"replace",8},{"append",9},{"pop",10},{"keys",11},{"values",12},{"type",13},{"args",14},{"fread",15},{"fwrite",16},{"fappend",17},{"fexists",18},{"exit",19},{"f",20},{"trim",21},{"startswith",22},{"endswith",23},{"lines",24},{"repeat",25},{"has_key",26},{"str",27},{"int",28},{"float",29},{"bool",30},{"char_at",31},{"sort",32},{"reverse",33},{"slice",34},{"map",35},{"filter",36},{"reduce",37},{"match",38},{"search",39},{"findall",40},{"gsub",41},{"ls",42},{"glob",43},{"stdin",44},{"ord",45},{"chr",46},{"is_digit",47},{"is_alpha",48},{"is_alnum",49},{"is_space",50},{"lstrip",51},{"rstrip",52},{"title",53},{"capitalize",54},{"count",55},{"rfind",56},{"min",57},{"max",58},{"sum",59},{"abs",60},{"round",61},{"pow",62},{"contains",63},{"mkdir",64},{"copy",65},{"rmdir",66},{"rename",67},{"getenv",68},{"setenv",69},{"cwd",70},{"chdir",71},{"regwrite",72},{"regdelete",73},{"shell",74},{"path_clean",75},{"regenv",146},{"cpdir",147},{"sqrt",76},{"floor",77},{"ceil",78},{"exp",79},{"log",80},{"log10",81},{"sin",82},{"cos",83},{"tan",84},{"sign",85},{"clamp",86},{"rand",87},{"randint",88},{"choice",89},{"shuffle",145},{"hex",90},{"bin",91},{"oct",92},{"pad",93},{"lpad",94},{"rpad",95},{"format",96},{"hash",97},{"range",98},{"first",99},{"last",100},{"take",101},{"drop",102},{"set",103},{"flatten",104},{"zip",105},{"insert",106},{"remove",107},{"index_of",108},{"enumerate",109},{"concat",110},{"get",111},{"items",112},{"pop_key",113},{"is_str",114},{"is_int",115},{"is_float",116},{"is_bool",117},{"is_list",118},{"is_dict",119},{"is_none",120},{"is_group",121},{"now",122},{"date",123},{"sleep",124},{"ticks",125},{"platform",126},{"temp_dir",127},{"fremove",128},{"fmove",129},{"fsize",130},{"is_dir",131},{"is_file",132},{"mkdirs",133},{"base64_encode",134},{"base64_decode",135},{"url_encode",136},{"url_decode",137},{"each",138},{"all",139},{"any",140},{"find_first",141},{"sort_by",142},{"throw",143},{"assert",144},{"thread",148},{"thread_join",149},{"thread_count",150},{"lock",151},{"unlock",152},{"http_get",153},{"http_post",154},{"tcp_ping",155},{"bin_read",156},{"bin_write",157},{"bin_hex",158},{"bin_unhex",159},{"bin_base64_encode",160},{"bin_base64_decode",161}};
+    static const std::unordered_map<std::string, int> g_bi = {{"up",1},{"down",2},{"len",3},{"sub",4},{"split",5},{"join",6},{"find",7},{"replace",8},{"append",9},{"pop",10},{"keys",11},{"values",12},{"type",13},{"args",14},{"fread",15},{"fwrite",16},{"fappend",17},{"fexists",18},{"exit",19},{"f",20},{"trim",21},{"startswith",22},{"endswith",23},{"lines",24},{"repeat",25},{"has_key",26},{"str",27},{"int",28},{"float",29},{"bool",30},{"char_at",31},{"sort",32},{"reverse",33},{"slice",34},{"map",35},{"filter",36},{"reduce",37},{"match",38},{"search",39},{"findall",40},{"gsub",41},{"ls",42},{"glob",43},{"stdin",44},{"ord",45},{"chr",46},{"is_digit",47},{"is_alpha",48},{"is_alnum",49},{"is_space",50},{"lstrip",51},{"rstrip",52},{"title",53},{"capitalize",54},{"count",55},{"rfind",56},{"min",57},{"max",58},{"sum",59},{"abs",60},{"round",61},{"pow",62},{"contains",63},{"mkdir",64},{"copy",65},{"rmdir",66},{"rename",67},{"getenv",68},{"setenv",69},{"cwd",70},{"chdir",71},{"regwrite",72},{"regdelete",73},{"shell",74},{"path_clean",75},{"regenv",146},{"cpdir",147},{"sqrt",76},{"floor",77},{"ceil",78},{"exp",79},{"log",80},{"log10",81},{"sin",82},{"cos",83},{"tan",84},{"sign",85},{"clamp",86},{"rand",87},{"randint",88},{"choice",89},{"shuffle",145},{"hex",90},{"bin",91},{"oct",92},{"pad",93},{"lpad",94},{"rpad",95},{"format",96},{"hash",97},{"range",98},{"first",99},{"last",100},{"take",101},{"drop",102},{"set",103},{"flatten",104},{"zip",105},{"insert",106},{"remove",107},{"index_of",108},{"enumerate",109},{"concat",110},{"get",111},{"items",112},{"pop_key",113},{"is_str",114},{"is_int",115},{"is_float",116},{"is_bool",117},{"is_list",118},{"is_dict",119},{"is_none",120},{"is_group",121},{"now",122},{"date",123},{"sleep",124},{"ticks",125},{"platform",126},{"temp_dir",127},{"fremove",128},{"fmove",129},{"fsize",130},{"is_dir",131},{"is_file",132},{"mkdirs",133},{"base64_encode",134},{"base64_decode",135},{"url_encode",136},{"url_decode",137},{"each",138},{"all",139},{"any",140},{"find_first",141},{"sort_by",142},{"throw",143},{"assert",144},{"thread",148},{"thread_join",149},{"thread_count",150},{"lock",151},{"unlock",152},{"http_get",153},{"http_post",154},{"tcp_ping",155},{"bin_read",156},{"bin_write",157},{"bin_hex",158},{"bin_unhex",159},{"bin_base64_encode",160},{"bin_base64_decode",161},{"json_encode",162},{"json_decode",163},{"re_groups",164},{"sha256",165},{"aes_encrypt",166},{"aes_decrypt",167},{"proc_run",168},{"ffi_call",169}};
     auto it = g_bi.find(name);
     if (it == g_bi.end()) throw VesnaError("未知内置 -" + name);
     switch (it->second) {
@@ -3846,6 +4076,93 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
         Value out = mkList();
         for (unsigned char ch : raw) out.list()->items.push_back(mkInt(ch));
         return out;
+    }
+
+    // ---- 1.2 数据 / 加密 / 进程 / FFI ----
+    case 162: {  // -json_encode(v)
+        return mkStr(jsonWrite(ev(0)));
+    }
+    case 163: {  // -json_decode(s)
+        Value s = ev(0);
+        if (s.t() != Value::T::STR) throw VesnaError("-json_decode 需要字符串");
+        JsonParser jp(s.s());
+        Value out = jp.parseValue();
+        if (jp.fail) throw VesnaError("-json_decode 解析失败");
+        return out;
+    }
+    case 164: {  // -re_groups(s; pattern)
+        Value s = ev(0), pat = ev(1);
+        if (s.t() != Value::T::STR || pat.t() != Value::T::STR)
+            throw VesnaError("-re_groups 需要字符串与正则");
+        std::smatch m;
+        Value out = mkList();
+        if (std::regex_search(s.s(), m, cachedRegex(pat.s()))) {
+            for (size_t i = 0; i < m.size(); ++i) {
+                if (m[i].matched) out.list()->items.push_back(mkStr(m[i].str()));
+                else out.list()->items.push_back(mkNone());
+            }
+        }
+        return out;
+    }
+    case 165: {  // -sha256(s)
+        Value s = ev(0);
+        if (s.t() != Value::T::STR) throw VesnaError("-sha256 需要字符串");
+        return mkStr(sha256Hex(s.s()));
+    }
+    case 166: {  // -aes_encrypt(data; key) -> base64
+        Value d = ev(0), k = ev(1);
+        if (d.t() != Value::T::STR || k.t() != Value::T::STR)
+            throw VesnaError("-aes_encrypt 需要数据与密钥字符串");
+        return mkStr(base64EncodeStr(aesEncryptCbc(d.s(), k.s())));
+    }
+    case 167: {  // -aes_decrypt(b64; key)
+        Value d = ev(0), k = ev(1);
+        if (d.t() != Value::T::STR || k.t() != Value::T::STR)
+            throw VesnaError("-aes_decrypt 需要密文(base64)与密钥字符串");
+        std::string raw = base64DecodeStr(d.s());
+        if (raw.size() % 16 != 0) throw VesnaError("-aes_decrypt 密文长度非法");
+        return mkStr(aesDecryptCbc(raw, k.s()));
+    }
+    case 168: {  // -proc_run(cmd) -> {exit; output}
+        Value c = ev(0);
+        if (c.t() != Value::T::STR) throw VesnaError("-proc_run 需要命令字符串");
+        auto r = procRun(c.s());
+        Value out = mkDict();
+        out.dict()->pairs.emplace_back(mkStr("exit"), mkInt(r.first));
+        out.dict()->pairs.emplace_back(mkStr("output"), mkStr(r.second));
+        return out;
+    }
+    case 169: {  // -ffi_call(dll; func; args...)
+        Value d = ev(0), f = ev(1);
+        if (d.t() != Value::T::STR || f.t() != Value::T::STR)
+            throw VesnaError("-ffi_call 需要 DLL 与函数名字符串");
+        void* h = ffiLoad(d.s());
+        if (!h) throw VesnaError("-ffi_call 无法加载库: " + d.s());
+        void* fn = ffiSym(h, f.s());
+        if (!fn) throw VesnaError("-ffi_call 未找到符号: " + f.s());
+        int n = (int)argc() - 2;
+        if (n > 6) throw VesnaError("-ffi_call 最多 6 个参数");
+        std::vector<int64_t> p((size_t)n, 0);
+        std::vector<std::string> bufs;
+        for (int i = 0; i < n; ++i) {
+            Value a = ev(i + 2);
+            if (a.t() == Value::T::INT) p[(size_t)i] = a.i();
+            else if (a.t() == Value::T::STR) {
+                bufs.push_back(a.s());
+                p[(size_t)i] = (int64_t)(intptr_t)bufs.back().c_str();
+            } else throw VesnaError("-ffi_call 参数仅支持 int / 字符串");
+        }
+        int64_t r = 0;
+        switch (n) {
+            case 0: r = ((int64_t(*)())fn)(); break;
+            case 1: r = ((int64_t(*)(int64_t))fn)(p[0]); break;
+            case 2: r = ((int64_t(*)(int64_t,int64_t))fn)(p[0], p[1]); break;
+            case 3: r = ((int64_t(*)(int64_t,int64_t,int64_t))fn)(p[0], p[1], p[2]); break;
+            case 4: r = ((int64_t(*)(int64_t,int64_t,int64_t,int64_t))fn)(p[0], p[1], p[2], p[3]); break;
+            case 5: r = ((int64_t(*)(int64_t,int64_t,int64_t,int64_t,int64_t))fn)(p[0], p[1], p[2], p[3], p[4]); break;
+            case 6: r = ((int64_t(*)(int64_t,int64_t,int64_t,int64_t,int64_t,int64_t))fn)(p[0], p[1], p[2], p[3], p[4], p[5]); break;
+        }
+        return mkInt(r);
     }
 
     }

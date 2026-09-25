@@ -1,0 +1,9 @@
+/* 1.2 FFI - 冒烟测试（Windows 专属，不进 golden） */
+print("-ffi GetTickCount > 0 ="; #ffi_call("kernel32.dll"; "GetTickCount") > '0')
+print("-ffi GetCurrentProcessId > 0 ="; #ffi_call("kernel32.dll"; "GetCurrentProcessId") > '0')
+print("-ffi GetModuleHandleA != 0 ="; #ffi_call("kernel32.dll"; "GetModuleHandleA"; "kernel32.dll") != '0')
+try-
+-print("-ffi bad dll (expect error)")
+-print(#ffi_call("no_such_dll.dll"; "x"))
+catch e-
+-print("-ffi caught"; #sub(#str(e); '1'; '30'))

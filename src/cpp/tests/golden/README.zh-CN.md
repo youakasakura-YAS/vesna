@@ -4,6 +4,7 @@
 
 - `regression.out` / `fs_test.out` / `smoke04.out`：由冻结的 **Python 参考实现 1.0.0**（youakasakura-YAS/vesna-py）生成，仅用于回归对照。
 - `examples/*.out`：由 **C++ 实现**（权威）生成；py 停更后 `#fread` + `#len` 语义存在分歧（py 按字符数、C++ 按 UTF-8 字节数），故以 C++ 为准。
+- `concurrency.out` / `binary.out`（自 1.1）、`tier3.out`（自 1.2）：由 **C++ 实现** 生成（冻结的 Python 参考不含这些内置；`tier3.ves` 依赖 `tier3_data.json`）。
 
 ## 生成命令
 
@@ -30,6 +31,9 @@ repo根\bin\vesna.exe stat.ves sample.txt              > ..\src\cpp\tests\golden
 repo根\bin\vesna.exe tail.ves "3" sample.txt          > ..\src\cpp\tests\golden\examples\tail.out
 repo根\bin\vesna.exe uniq.ves sample.txt              > ..\src\cpp\tests\golden\examples\uniq.out
 repo根\bin\vesna.exe wc.ves sample.txt                > ..\src\cpp\tests\golden\examples\wc.out
+repo根\bin\vesna.exe tests\concurrency.ves > tests\golden\concurrency.out
+repo根\bin\vesna.exe tests\binary.ves      > tests\golden\binary.out
+repo根\bin\vesna.exe tests\tier3.ves       > tests\golden\tier3.out
 ```
 
 **注意**：

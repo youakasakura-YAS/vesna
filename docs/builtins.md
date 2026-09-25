@@ -413,6 +413,39 @@ Notes: each thread runs on an independent copy of global state (functions are sh
 | `#bin_base64_decode(s)` | base64 string -> bytes list |
 
 Bytes are plain integers, so existing list ops (`#len`, `#slice`, `#append`, ...) work on binary data directly.
+## 1.2 Data / Crypto / Process / FFI
+
+### Data
+
+| Function | Description |
+|---|---|
+| `#json_encode(v)` | serialize any value to a JSON string (dicts keep insertion order) |
+| `#json_decode(s)` | parse JSON to dict / list / int / float / string / bool / none; raises on invalid input |
+| `#re_groups(s; pattern)` | first regex match as a group list: group 0 = whole match, unmatched groups are `none`; empty list if no match |
+
+### Crypto
+
+| Function | Description |
+|---|---|
+| `#sha256(s)` | SHA-256 hex digest (64 chars) — verified against FIPS 180-4 vectors |
+| `#aes_encrypt(data; key)` | AES-256-CBC + PKCS7, key derived via SHA-256, returns base64 (verified against FIPS-197) |
+| `#aes_decrypt(b64; key)` | decrypt base64 ciphertext produced by `#aes_encrypt` with the same key |
+
+Note: the AES mode uses a fixed zero IV and a SHA-256-derived key — suitable for local tooling / storage at rest, not a substitute for authenticated encryption in high-security channels.
+
+### Process
+
+| Function | Description |
+|---|---|
+| `#proc_run(cmd)` | run a command, return dict `{"exit": code; "output": captured stdout}` |
+
+### FFI (Windows x64; Linux/macOS via dlopen)
+
+| Function | Description |
+|---|---|
+| `#ffi_call("dll"; "func"; arg...)` | load a shared library and call a C function; args support int / string (string passed as `char*`), max 6 args; returns the 64-bit integer result |
+
+Examples: `#ffi_call("kernel32.dll"; "GetTickCount")`, `#ffi_call("kernel32.dll"; "GetModuleHandleA"; "kernel32.dll")`.
 
 ## Full example
 

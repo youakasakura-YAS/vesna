@@ -2,7 +2,16 @@
 
 [English](CHANGELOG.md) | [中文](CHANGELOG.zh-CN.md)
 
-## 1.1.0
+## 1.2.0
+
+### Added
+- **Data builtins**: `#json_encode(v)` / `#json_decode(s)` (native JSON, dicts keep insertion order), `#re_groups(s; pattern)` (regex capture groups, unmatched groups are `none`)
+- **Crypto builtins**: `#sha256(s)` (verified against FIPS 180-4 vectors), `#aes_encrypt(data; key)` / `#aes_decrypt(b64; key)` (AES-256-CBC + PKCS7, SHA-256-derived key, base64 output, verified against FIPS-197); new pure-C++ `src/cpp/crypto.h` with `crypto_selftest.cpp` vector checks
+- **Process builtin**: `#proc_run(cmd)` returns `{"exit": code; "output": stdout}`
+- **FFI**: `#ffi_call("dll"; "func"; arg...)` — call C functions from shared libraries (Windows x64 LoadLibrary/GetProcAddress; Linux/macOS dlopen/dlsym); args: int / string (`char*`), up to 6 args, 64-bit integer result
+- New smoke test `tests/tier3.ves` (+ `tier3_data.json`) with C++-generated golden
+
+## 1.1.0## 1.1.0
 
 ### Added
 - **Concurrency builtins**: `#thread("fn"; arg...)` (run a function in a new thread with an isolated copy of global variables; returns a thread id), `#thread_join(id)` (wait and collect the `back` value, rethrowing the thread's error), `#thread_count()`, `#lock("name")` / `#unlock("name")` (named mutexes for shared resources); `print` output is serialized and unjoined threads are joined at exit
