@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Vesna 0.3.0 — Scripts of spring"""
+"""Vesna 1.0.0 — Scripts of spring
+
+注意：本 Python 参考实现已停止更新，仅用于回归 golden 生成。"""
 
 import sys
 import os
 import re
 
-VERSION = "0.3.0"
+VERSION = "1.0.0"
 INSTALL_SCRIPT = r'''
 /* Vesna 内置安装程序 */
 
@@ -377,6 +379,23 @@ BUILTINS = {
     'mkdir', 'copy', 'rmdir', 'rename',
     'getenv', 'setenv', 'cwd', 'chdir',
     'regwrite', 'regdelete', 'shell', 'path_clean',
+    # ---- 0.4 general-purpose expansion ----
+    'sqrt', 'floor', 'ceil', 'exp', 'log', 'log10',
+    'sin', 'cos', 'tan', 'sign', 'clamp',
+    'rand', 'randint', 'choice', 'shuffle',
+    'hex', 'bin', 'oct',
+    'pad', 'lpad', 'rpad', 'format', 'hash',
+    'range', 'first', 'last', 'take', 'drop', 'set',
+    'flatten', 'zip', 'insert', 'remove', 'index_of',
+    'enumerate', 'concat',
+    'get', 'items', 'pop_key',
+    'is_str', 'is_int', 'is_float', 'is_bool',
+    'is_list', 'is_dict', 'is_none', 'is_group',
+    'now', 'date', 'sleep', 'ticks', 'platform', 'temp_dir',
+    'fremove', 'fmove', 'fsize', 'is_dir', 'is_file', 'mkdirs',
+    'base64_encode', 'base64_decode', 'url_encode', 'url_decode',
+    'each', 'all', 'any', 'find_first', 'sort_by',
+    'throw', 'assert',
 }
 
 TYPE_KEYWORDS = {'int', 'str', 'float', 'list', 'dict', 'bool'}
@@ -1931,7 +1950,404 @@ class Interp:
             p = ev(0)
             if not isinstance(p, str):
                 raise VesnaError("-path_clean 需要字符串")
-            return _os.path.abspath(p)      
+            return _os.path.abspath(p)
+
+        # ---- 0.4 通用编程语言扩充 ----
+        if name == 'sqrt':
+            v = ev(0)
+            if isinstance(v, bool) or not isinstance(v, (int, float)): raise VesnaError("-sqrt 需要数字")
+            if v < 0: raise VesnaError("-sqrt 负数无实根")
+            return v ** 0.5
+        if name == 'floor':
+            import math
+            v = ev(0)
+            if isinstance(v, bool) or not isinstance(v, (int, float)): raise VesnaError("-floor 需要数字")
+            return int(math.floor(v))
+        if name == 'ceil':
+            import math
+            v = ev(0)
+            if isinstance(v, bool) or not isinstance(v, (int, float)): raise VesnaError("-ceil 需要数字")
+            return int(math.ceil(v))
+        if name == 'exp':
+            import math
+            v = ev(0)
+            if isinstance(v, bool) or not isinstance(v, (int, float)): raise VesnaError("-exp 需要数字")
+            return math.exp(v)
+        if name == 'log':
+            import math
+            v = ev(0)
+            if isinstance(v, bool) or not isinstance(v, (int, float)): raise VesnaError("-log 需要数字")
+            if v <= 0: raise VesnaError("-log 参数必须大于 0")
+            return math.log(v)
+        if name == 'log10':
+            import math
+            v = ev(0)
+            if isinstance(v, bool) or not isinstance(v, (int, float)): raise VesnaError("-log10 需要数字")
+            if v <= 0: raise VesnaError("-log10 参数必须大于 0")
+            return math.log10(v)
+        if name == 'sin':
+            import math
+            v = ev(0)
+            if isinstance(v, bool) or not isinstance(v, (int, float)): raise VesnaError("-sin 需要数字")
+            return math.sin(v)
+        if name == 'cos':
+            import math
+            v = ev(0)
+            if isinstance(v, bool) or not isinstance(v, (int, float)): raise VesnaError("-cos 需要数字")
+            return math.cos(v)
+        if name == 'tan':
+            import math
+            v = ev(0)
+            if isinstance(v, bool) or not isinstance(v, (int, float)): raise VesnaError("-tan 需要数字")
+            return math.tan(v)
+        if name == 'sign':
+            v = ev(0)
+            if isinstance(v, bool) or not isinstance(v, (int, float)): raise VesnaError("-sign 需要数字")
+            return 1 if v > 0 else (-1 if v < 0 else 0)
+        if name == 'clamp':
+            x, lo, hi = ev(0), ev(1), ev(2)
+            if isinstance(x, bool) or isinstance(lo, bool) or isinstance(hi, bool) or \
+               not isinstance(x, (int, float)) or not isinstance(lo, (int, float)) or not isinstance(hi, (int, float)):
+                raise VesnaError("-clamp 需要数字")
+            if lo > hi: raise VesnaError("-clamp 下界不能大于上界")
+            v = lo if x < lo else (hi if x > hi else x)
+            if isinstance(x, int) and isinstance(lo, int) and isinstance(hi, int):
+                return int(v)
+            return float(v)
+        if name == 'rand':
+            import random
+            return random.random()
+        if name == 'randint':
+            import random
+            a, b = ev(0), ev(1)
+            if isinstance(a, bool) or isinstance(b, bool) or not isinstance(a, (int, float)) or not isinstance(b, (int, float)):
+                raise VesnaError("-randint 需要整数")
+            lo, hi = int(a), int(b)
+            if hi < lo: lo, hi = hi, lo
+            return random.randint(lo, hi)
+        if name == 'choice':
+            import random
+            lst = ev(0)
+            if not isinstance(lst, (list, tuple)): raise VesnaError("-choice 需要列表/组")
+            if not lst: raise VesnaError("-choice 空列表")
+            return random.choice(list(lst))
+        if name == 'shuffle':
+            import random
+            v = ev(0)
+            if not isinstance(v, (list, tuple)): raise VesnaError("-shuffle 需要列表/组")
+            return random.sample(list(v), len(v))
+        if name == 'hex':
+            v = ev(0)
+            if isinstance(v, bool) or not isinstance(v, (int, float)): raise VesnaError("-hex 需要整数")
+            return _int_to_base(int(v), 16)
+        if name == 'bin':
+            v = ev(0)
+            if isinstance(v, bool) or not isinstance(v, (int, float)): raise VesnaError("-bin 需要整数")
+            return _int_to_base(int(v), 2)
+        if name == 'oct':
+            v = ev(0)
+            if isinstance(v, bool) or not isinstance(v, (int, float)): raise VesnaError("-oct 需要整数")
+            return _int_to_base(int(v), 8)
+        if name in ('pad', 'lpad', 'rpad'):
+            s, w = ev(0), ev(1)
+            if not isinstance(s, str): raise VesnaError(f"-{name} 第一个参数需要字符串")
+            if not isinstance(w, int): raise VesnaError(f"-{name} 宽度需要整数")
+            padc = ' '
+            if len(args) > 2:
+                c = ev(2)
+                if not isinstance(c, str) or not c: raise VesnaError(f"-{name} 填充字符需要非空字符串")
+                padc = c
+            if w <= len(s):
+                return s
+            total = w - len(s)
+            if name == 'lpad':
+                return padc * total + s
+            if name == 'rpad':
+                return s + padc * total
+            left = total // 2
+            return padc * left + s + padc * (total - left)
+        if name == 'format':
+            vals = [ev(i) for i in range(len(args))]
+            f = vals[0] if vals and isinstance(vals[0], str) else ('' if not vals else fmt(vals[0]))
+            return _format_v(f, vals[1:])
+        if name == 'hash':
+            s = ev(0)
+            if not isinstance(s, str): raise VesnaError("-hash 需要字符串")
+            return _fnv1a64(s)
+        if name == 'range':
+            st, en = ev(0), ev(1)
+            if not isinstance(st, int) or not isinstance(en, int): raise VesnaError("-range 参数需要整数")
+            step = 1
+            if len(args) > 2:
+                sp = ev(2)
+                if not isinstance(sp, int): raise VesnaError("-range 步长需要整数")
+                step = sp
+            if step == 0: raise VesnaError("-range 步长不能为 0")
+            return list(range(st, en, step))
+        if name in ('first', 'last'):
+            v = ev(0)
+            if not isinstance(v, (list, tuple)): raise VesnaError(f"-{name} 需要列表/组")
+            if not v: return None
+            return v[0] if name == 'first' else v[-1]
+        if name in ('take', 'drop'):
+            v, n = ev(0), ev(1)
+            if not isinstance(v, (list, tuple)): raise VesnaError(f"-{name} 第一个参数需要列表/组")
+            if not isinstance(n, int): raise VesnaError(f"-{name} 数量需要整数")
+            cnt = n if n > 0 else 0
+            if name == 'take':
+                return list(v[:cnt])
+            return list(v[cnt:])
+        if name == 'set':
+            v = ev(0)
+            if not isinstance(v, (list, tuple)): raise VesnaError("-set 需要列表/组")
+            out = []
+            for it in v:
+                if not any(self.eq(o, it) for o in out):
+                    out.append(it)
+            return out
+        if name == 'flatten':
+            v = ev(0)
+            if not isinstance(v, (list, tuple)): raise VesnaError("-flatten 需要列表/组")
+            out = []
+            for it in v:
+                if isinstance(it, (list, tuple)):
+                    out.extend(it)
+                else:
+                    out.append(it)
+            return out
+        if name == 'zip':
+            a, b = ev(0), ev(1)
+            if not isinstance(a, (list, tuple)): raise VesnaError("-zip 第一个参数需要列表/组")
+            if not isinstance(b, (list, tuple)): raise VesnaError("-zip 第二个参数需要列表/组")
+            return [tuple(p) for p in zip(a, b)]
+        if name == 'insert':
+            a, i, x = ev(0), ev(1), ev(2)
+            if not isinstance(a, (list, tuple)): raise VesnaError("-insert 第一个参数需要列表/组")
+            if not isinstance(i, int): raise VesnaError("-insert 位置需要整数")
+            pos = i - 1
+            if pos < 0: pos = 0
+            if pos > len(a): pos = len(a)
+            out = list(a)
+            out.insert(pos, x)
+            return out
+        if name == 'remove':
+            a, i = ev(0), ev(1)
+            if not isinstance(a, (list, tuple)): raise VesnaError("-remove 第一个参数需要列表/组")
+            if not isinstance(i, int): raise VesnaError("-remove 位置需要整数")
+            pos = i - 1
+            if pos < 0: pos += len(a)
+            if pos < 0 or pos >= len(a): raise VesnaError(f"-remove 下标越界: {fmt(i)}")
+            out = list(a)
+            del out[pos]
+            return out
+        if name == 'index_of':
+            a, x = ev(0), ev(1)
+            if not isinstance(a, (list, tuple)): raise VesnaError("-index_of 第一个参数需要列表/组")
+            for k, it in enumerate(a):
+                if self.eq(it, x):
+                    return k + 1
+            return 0
+        if name == 'enumerate':
+            a = ev(0)
+            if not isinstance(a, (list, tuple)): raise VesnaError("-enumerate 需要列表/组")
+            return [(k + 1, v) for k, v in enumerate(a)]
+        if name == 'concat':
+            a, b = ev(0), ev(1)
+            if not isinstance(a, (list, tuple)): raise VesnaError("-concat 第一个参数需要列表/组")
+            if not isinstance(b, (list, tuple)): raise VesnaError("-concat 第二个参数需要列表/组")
+            return list(a) + list(b)
+        if name == 'get':
+            d, k = ev(0), ev(1)
+            if not isinstance(d, dict): raise VesnaError("-get 第一个参数需要字典")
+            if k in d:
+                return d[k]
+            return ev(2) if len(args) > 2 else None
+        if name == 'items':
+            d = ev(0)
+            if not isinstance(d, dict): raise VesnaError("-items 需要字典")
+            return [(k, v) for k, v in d.items()]
+        if name == 'pop_key':
+            d, k = ev(0), ev(1)
+            if not isinstance(d, dict): raise VesnaError("-pop_key 第一个参数需要字典")
+            return d.pop(k, None)
+        if name == 'is_str':
+            return isinstance(ev(0), str)
+        if name == 'is_int':
+            return isinstance(ev(0), int) and not isinstance(ev(0), bool)
+        if name == 'is_float':
+            return isinstance(ev(0), float)
+        if name == 'is_bool':
+            return isinstance(ev(0), bool)
+        if name == 'is_list':
+            return isinstance(ev(0), list)
+        if name == 'is_dict':
+            return isinstance(ev(0), dict)
+        if name == 'is_none':
+            return ev(0) is None
+        if name == 'is_group':
+            return isinstance(ev(0), tuple)
+        if name == 'now':
+            import time
+            return int(time.time())
+        if name == 'date':
+            import time
+            fmt = ev(0) if args else '%Y-%m-%d %H:%M:%S'
+            if not isinstance(fmt, str): raise VesnaError("-date 格式需要字符串")
+            return time.strftime(fmt)
+        if name == 'sleep':
+            import time
+            ms = ev(0)
+            if not isinstance(ms, int): raise VesnaError("-sleep 需要整数毫秒")
+            if ms < 0: return None
+            time.sleep(ms / 1000.0)
+            return None
+        if name == 'ticks':
+            import time
+            return int(time.monotonic() * 1000)
+        if name == 'platform':
+            return 'windows'
+        if name == 'temp_dir':
+            import tempfile
+            return tempfile.gettempdir().rstrip('\\/')
+        if name == 'fremove':
+            p = ev(0)
+            if not isinstance(p, str): raise VesnaError("-fremove 需要字符串")
+            if os.path.exists(p):
+                os.remove(p)
+            return None
+        if name == 'fmove':
+            s, d = ev(0), ev(1)
+            if not isinstance(s, str) or not isinstance(d, str): raise VesnaError("-fmove 参数需要字符串")
+            if not os.path.exists(s): raise VesnaError(f"-fmove 源不存在: {s}")
+            os.rename(s, d)
+            return None
+        if name == 'fsize':
+            p = ev(0)
+            if not isinstance(p, str): raise VesnaError("-fsize 需要字符串")
+            try:
+                return os.path.getsize(p)
+            except OSError:
+                raise VesnaError(f"-fsize 无法访问: {p}")
+        if name == 'is_dir':
+            p = ev(0)
+            if not isinstance(p, str): raise VesnaError("-is_dir 需要字符串")
+            return os.path.isdir(p)
+        if name == 'is_file':
+            p = ev(0)
+            if not isinstance(p, str): raise VesnaError("-is_file 需要字符串")
+            return os.path.isfile(p)
+        if name == 'mkdirs':
+            p = ev(0)
+            if not isinstance(p, str): raise VesnaError("-mkdirs 需要字符串")
+            os.makedirs(p, exist_ok=True)
+            return None
+        if name == 'base64_encode':
+            import base64
+            s = ev(0)
+            if not isinstance(s, str): raise VesnaError("-base64_encode 需要字符串")
+            return base64.b64encode(s.encode('utf-8')).decode('ascii')
+        if name == 'base64_decode':
+            import base64
+            s = ev(0)
+            if not isinstance(s, str): raise VesnaError("-base64_decode 需要字符串")
+            try:
+                return base64.b64decode(s).decode('utf-8')
+            except Exception:
+                raise VesnaError("-base64_decode 无效字符")
+        if name == 'url_encode':
+            from urllib.parse import quote_plus
+            s = ev(0)
+            if not isinstance(s, str): raise VesnaError("-url_encode 需要字符串")
+            return quote_plus(s)
+        if name == 'url_decode':
+            from urllib.parse import unquote_plus
+            s = ev(0)
+            if not isinstance(s, str): raise VesnaError("-url_decode 需要字符串")
+            return unquote_plus(s)
+        if name in ('each', 'all', 'any', 'find_first'):
+            lst = ev(0)
+            if not isinstance(lst, (list, tuple)): raise VesnaError(f"-{name} 第一个参数需要列表/组")
+            fname = ev(1)
+            if not isinstance(fname, str): raise VesnaError(f"-{name} 第二个参数需要函数名字符串")
+            fn = env.get_func(fname)
+            if len(fn.params) < 1: raise VesnaError(f"{fname} 需要 1 个参数")
+            if name == 'each':
+                for item in lst:
+                    local = Env(fn.closure)
+                    local.set(fn.params[0][0], item)
+                    try:
+                        for s in fn.body:
+                            self.exec(s, local)
+                    except ReturnSignal:
+                        pass
+                return lst
+            if name == 'all':
+                for item in lst:
+                    local = Env(fn.closure)
+                    local.set(fn.params[0][0], item)
+                    try:
+                        for s in fn.body:
+                            self.exec(s, local)
+                        result = None
+                    except ReturnSignal as rs:
+                        result = rs.value
+                    if not self.truthy(result):
+                        return False
+                return True
+            if name == 'any':
+                for item in lst:
+                    local = Env(fn.closure)
+                    local.set(fn.params[0][0], item)
+                    try:
+                        for s in fn.body:
+                            self.exec(s, local)
+                        result = None
+                    except ReturnSignal as rs:
+                        result = rs.value
+                    if self.truthy(result):
+                        return True
+                return False
+            for item in lst:
+                local = Env(fn.closure)
+                local.set(fn.params[0][0], item)
+                try:
+                    for s in fn.body:
+                        self.exec(s, local)
+                    result = None
+                except ReturnSignal as rs:
+                    result = rs.value
+                if self.truthy(result):
+                    return item
+            return None
+        if name == 'sort_by':
+            lst = ev(0)
+            if not isinstance(lst, (list, tuple)): raise VesnaError("-sort_by 第一个参数需要列表/组")
+            fname = ev(1)
+            if not isinstance(fname, str): raise VesnaError("-sort_by 第二个参数需要函数名字符串")
+            fn = env.get_func(fname)
+            if len(fn.params) < 1: raise VesnaError(f"{fname} 需要 1 个参数")
+            def key_of(item):
+                local = Env(fn.closure)
+                local.set(fn.params[0][0], item)
+                try:
+                    for s in fn.body:
+                        self.exec(s, local)
+                    return None
+                except ReturnSignal as rs:
+                    return rs.value
+            return sorted(list(lst), key=key_of)
+        if name == 'throw':
+            m = ev(0)
+            raise VesnaError(m if isinstance(m, str) else fmt(m))
+        if name == 'assert':
+            ok = self.truthy(ev(0))
+            if not ok:
+                msg = 'assert 失败'
+                if len(args) > 1:
+                    m = ev(1)
+                    msg = m if isinstance(m, str) else fmt(m)
+                raise VesnaError(msg)
+            return None      
 
         raise VesnaError(f"未知内置 -{name}")
 
@@ -1982,6 +2398,96 @@ class Interp:
 # 输出格式化
 # ============================================================
 
+
+# ---- 0.4 通用编程语言扩充：辅助 ----
+def _int_to_base(n, base):
+    if n == 0:
+        return '0'
+    neg = n < 0
+    if neg:
+        n = -n
+    d = '0123456789abcdef'
+    s = ''
+    while n:
+        s = d[n % base] + s
+        n //= base
+    return '-' + s if neg else s
+
+
+def _fnv1a64(s):
+    h = 0xcbf29ce484222325
+    for b in s.encode('utf-8'):
+        h ^= b
+        h = (h * 0x100000001b3) & 0xFFFFFFFFFFFFFFFF
+    return str(h)
+
+
+def _fmt_s(v):
+    if isinstance(v, str):
+        return v
+    if isinstance(v, bool):
+        return 'true' if v else 'false'
+    if isinstance(v, int):
+        return str(v)
+    if isinstance(v, float):
+        if v == int(v) and abs(v) < 1e15:
+            return str(int(v))
+        return repr(v)
+    if v is None:
+        return 'none'
+    return fmt(v)
+
+
+def _format_v(s, vals):
+    out = []
+    vi = 0
+    i = 0
+    while i < len(s):
+        if s[i] == '%' and i + 1 < len(s):
+            j = i + 1
+            prec = None
+            if s[j] == '.':
+                k = j + 1
+                p = 0
+                while k < len(s) and s[k].isdigit():
+                    p = p * 10 + int(s[k])
+                    k += 1
+                prec = p
+                j = k
+            if j < len(s) and s[j] == '%':
+                out.append('%')
+                i = j + 1
+                continue
+            if j >= len(s):
+                out.append(s[i:])
+                break
+            if vi >= len(vals):
+                raise VesnaError("-format 参数不足")
+            v = vals[vi]
+            vi += 1
+            if s[j] == 's':
+                out.append(_fmt_s(v))
+            elif s[j] == 'd':
+                if isinstance(v, bool) or not isinstance(v, (int, float)):
+                    raise VesnaError("-format %d 需要数字")
+                out.append('%d' % int(v))
+            elif s[j] == 'f':
+                if isinstance(v, bool) or not isinstance(v, (int, float)):
+                    raise VesnaError("-format %f 需要数字")
+                if prec is not None:
+                    out.append(('%.' + str(prec) + 'f') % v)
+                else:
+                    out.append('%.6f' % v)
+            else:
+                out.append('%')
+                if prec is not None:
+                    out.append('.' + str(prec))
+                out.append(s[j])
+            i = j + 1
+        else:
+            out.append(s[i])
+            i += 1
+    return ''.join(out)
 def fmt(v):
     if v is None: return 'none'
     if isinstance(v, bool): return 'true' if v else 'false'

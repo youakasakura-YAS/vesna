@@ -6,7 +6,7 @@
 
 [English](README.md) | [中文](README.zh-CN.md)
 
-![version](https://img.shields.io/badge/version-1.2.0-blue)
+![version](https://img.shields.io/badge/version-1.3.0-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![platform](https://img.shields.io/badge/platform-Windows-x64-lightgrey)
 
@@ -25,7 +25,7 @@
 
 ### 1. Download
 
-Grab `vesna-1.2.0-windows-x64.zip` from [Releases](../../releases) and extract it anywhere.
+Grab `vesna-1.3.0-windows-x64.zip` from [Releases](../../releases) and extract it anywhere.
 
 | File | Description |
 |---|---|
@@ -79,6 +79,7 @@ vesna --pkg search <keyword>
 ```
 
 `install <name>` looks the name up in the cached registry index and downloads the package zip. The official registry — [Vesna Package Garden](https://youakasakura-YAS.github.io/vesna-pkg/) — is used by default. Installed packages are imported with `import <name>` from `<VESNA_HOME>\packages\<name>\<name>.ves`.
+Validation (since 1.3): package metadata is checked (`name` must be `^[a-z][a-z0-9_-]+$`, `version` must be `x.y.z`, `entry` must exist), registry entries may carry a `sha256` hash that is verified before install, dependencies are installed automatically (with version checks and loop protection), and `remove` refuses to uninstall a package other installed packages still depend on (`--force` overrides).
 
 ---
 

@@ -6,7 +6,7 @@
 
 [English](README.md) | [中文](README.zh-CN.md)
 
-![version](https://img.shields.io/badge/version-1.2.0-blue)
+![version](https://img.shields.io/badge/version-1.3.0-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![platform](https://img.shields.io/badge/platform-Windows-x64-lightgrey)
 
@@ -25,7 +25,7 @@
 
 ### 1. 下载
 
-从 [Releases](../../releases) 下载 `vesna-1.2.0-windows-x64.zip` 并解压到任意目录。
+从 [Releases](../../releases) 下载 `vesna-1.3.0-windows-x64.zip` 并解压到任意目录。
 
 | 文件 | 说明 |
 |---|---|
@@ -79,6 +79,7 @@ vesna --pkg search <关键词>
 ```
 
 `install <包名>` 会在缓存的 registry 索引中查找并下载包 zip。默认使用官方 registry——[Vesna 包花园](https://youakasakura-YAS.github.io/vesna-pkg/)。安装的包通过 `import <名称>` 从 `<VESNA_HOME>\packages\<名称>\<名称>.ves` 导入。
+自 1.3 起加入校验：包元数据检查（`name` 须匹配 `^[a-z][a-z0-9_-]+$`，`version` 须为 `x.y.z`，`entry` 必须存在）；registry 条目可携带 `sha256`，安装前校验哈希；依赖自动安装（含版本检查与循环保护）；`remove` 会拒绝卸载仍被其他已装包依赖的包（`--force` 可强制）。
 
 ---
 

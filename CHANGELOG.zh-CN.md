@@ -2,7 +2,14 @@
 
 [English](CHANGELOG.md) | [中文](CHANGELOG.zh-CN.md)
 
-## 1.2.0
+## 1.3.0
+
+### 新增
+- **vpm 校验增强**（`lib/pkg.ves`）：元数据校验（`name` 须匹配 `^[a-z][a-z0-9_-]+$`、`version` 须为 `x.y.z`、`entry` 必须存在）、registry 条目可选 `sha256` 完整性校验、依赖自动安装（含版本检查与循环保护）、`remove` 依赖保护（`--force` 覆盖）。`init [名称]` 现在校验包名。
+- **LSP 0.4.0**（`vesna-vscode/server`）：解析器同步至冻结的 1.0.0 参考实现（覆盖 0.4 全部语法诊断）；补全覆盖全部 169 个内置（含 1.1/1.2 梯队）；悬停显示内置/关键字文档；`documentSymbol`（函数）；`foldingRange`（缩进块）；`#` 补全触发器。
+- **VSCode 插件 0.4.0**：`vesna-0.4.0.vsix`，serverInfo 0.4.0，更新描述。
+
+## 1.2.0## 1.2.0
 
 ### 新增
 - **数据内置**：`#json_encode(v)` / `#json_decode(s)`（原生 JSON，dict 保持插入顺序）、`#re_groups(s; pattern)`（正则捕获组，未匹配组为 `none`）

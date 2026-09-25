@@ -2,7 +2,14 @@
 
 [English](CHANGELOG.md) | [中文](CHANGELOG.zh-CN.md)
 
-## 1.2.0
+## 1.3.0
+
+### Added
+- **vpm validation** (`lib/pkg.ves`): metadata checks (`name` `^[a-z][a-z0-9_-]+$`, `version` `x.y.z`, `entry` must exist), optional `sha256` integrity verification from registry entries, automatic dependency installation with version checks and loop protection, and `remove` dependency guard (`--force` overrides). `init [name]` now validates the package name.
+- **LSP 0.4.0** (`vesna-vscode/server`): parser synced to the frozen 1.0.0 reference (full 0.4 syntax diagnostics); completion covers all 169 builtins (1.1/1.2 tiers included); hover with builtin/keyword docs; `documentSymbol` (functions); `foldingRange` (indent blocks); `#` completion trigger.
+- **VSCode extension 0.4.0**: `vesna-0.4.0.vsix`, serverInfo 0.4.0, new description.
+
+## 1.2.0## 1.2.0
 
 ### Added
 - **Data builtins**: `#json_encode(v)` / `#json_decode(s)` (native JSON, dicts keep insertion order), `#re_groups(s; pattern)` (regex capture groups, unmatched groups are `none`)

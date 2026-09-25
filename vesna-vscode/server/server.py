@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Vesna LSP Server"""
+"""Vesna LSP Server 0.4.0"""
 
 import sys
 import os
@@ -156,12 +156,102 @@ COMPLETION_BUILTINS = [
     ('#exit', '退出'),
     ('#regwrite', '写注册表'), ('#regdelete', '删注册表'),
     ('#shell', '执行命令'), ('#path_clean', '路径清理'),
+    ('#regenv', '刷新环境变量'), ('#cpdir', '复制目录'),
+    ('#sqrt', '平方根'), ('#floor', '向下取整'), ('#ceil', '向上取整'),
+    ('#exp', '指数'), ('#log', '自然对数'), ('#log10', '常用对数'),
+    ('#sin', '正弦'), ('#cos', '余弦'), ('#tan', '正切'),
+    ('#sign', '符号'), ('#clamp', '夹取'), ('#rand', '随机小数'),
+    ('#randint', '随机整数'), ('#choice', '随机选择'), ('#shuffle', '打乱'),
+    ('#hex', '转十六进制'), ('#bin', '转二进制'), ('#oct', '转八进制'),
+    ('#pad', '填充'), ('#lpad', '左填充'), ('#rpad', '右填充'),
+    ('#format', '格式化'), ('#hash', '哈希'),
+    ('#range', '整数序列'), ('#first', '首元素'), ('#last', '末元素'),
+    ('#take', '取前 n'), ('#drop', '丢前 n'), ('#set', '去重'),
+    ('#flatten', '展平'), ('#zip', '并行配对'), ('#insert', '插入'),
+    ('#remove', '删除元素'), ('#index_of', '索引'), ('#enumerate', '带序号'),
+    ('#concat', '合并'), ('#get', '取键值'), ('#items', '键值对'),
+    ('#pop_key', '弹键'), ('#is_str', '是字符串'), ('#is_int', '是整数'),
+    ('#is_float', '是浮点'), ('#is_bool', '是布尔'), ('#is_list', '是列表'),
+    ('#is_dict', '是字典'), ('#is_none', '是 none'), ('#is_group', '是分组'),
+    ('#now', '当前时间'), ('#date', '日期'), ('#sleep', '休眠'),
+    ('#ticks', '毫秒计数'), ('#platform', '平台'), ('#temp_dir', '临时目录'),
+    ('#fremove', '删文件'), ('#fmove', '移动文件'), ('#fsize', '文件大小'),
+    ('#is_dir', '是目录'), ('#is_file', '是文件'), ('#mkdirs', '建目录树'),
+    ('#base64_encode', 'Base64 编码'), ('#base64_decode', 'Base64 解码'),
+    ('#url_encode', 'URL 编码'), ('#url_decode', 'URL 解码'),
+    ('#each', '遍历'), ('#all', '全真'), ('#any', '任一真'),
+    ('#find_first', '查首个'), ('#sort_by', '按键排序'), ('#throw', '抛异常'),
+    ('#assert', '断言'),
+    ('#thread', '开线程'), ('#thread_join', '等线程'), ('#thread_count', '线程数'),
+    ('#lock', '加锁'), ('#unlock', '解锁'),
+    ('#http_get', 'HTTP GET'), ('#http_post', 'HTTP POST'), ('#tcp_ping', 'TCP 探测'),
+    ('#bin_read', '读二进制'), ('#bin_write', '写二进制'),
+    ('#bin_hex', '转十六进制'), ('#bin_unhex', '十六进制还原'),
+    ('#bin_base64_encode', '二进制 Base64'), ('#bin_base64_decode', 'Base64 还原'),
+    ('#json_encode', 'JSON 序列化'), ('#json_decode', 'JSON 解析'),
+    ('#re_groups', '正则分组'), ('#sha256', 'SHA-256 摘要'),
+    ('#aes_encrypt', 'AES 加密'), ('#aes_decrypt', 'AES 解密'),
+    ('#proc_run', '运行进程'), ('#ffi_call', '调用 C 函数'),
 ]
 
 COMPLETION_TYPES = [
     ('int', '整数类型'), ('str', '字符串类型'), ('float', '浮点类型'),
     ('list', '列表类型'), ('dict', '字典类型'), ('bool', '布尔类型'),
 ]
+
+# ---------- hover ----------
+
+HOVER_KEYWORDS = {
+    'if': '条件分支：`if 条件-` 后接单层缩进块，可配 `elif` / `else`。',
+    'elif': '`elif 条件-`：前一个 `if` 未命中时的分支判断。',
+    'else': '`else-`：前面条件全部不满足时执行的块。',
+    'while': '`while 条件-`：条件为真时循环执行块体。',
+    'for': '`for 变量 in 列表-`：遍历列表（索引从 1 开始）。',
+    'in': '配合 `for` 使用：`for x in lst-`。',
+    'break': '跳出当前循环。',
+    'continue': '跳过本轮，进入下一轮循环。',
+    'def': '`def 名(参数)-` 定义函数，块内用 `back(值)` 返回。',
+    'back': '函数返回：`back(值)` 或 `back()`。',
+    'try': '`try-` 开始异常捕获块，需配 `catch e-`。',
+    'catch': '`catch e-`：捕获异常，变量 `e` 为错误信息。',
+    'import': '`import 模块`：加载 `lib` 或 `packages` 中的模块。',
+    'and': '逻辑与。', 'or': '逻辑或。', 'not': '逻辑非。',
+    'true': '布尔真。', 'false': '布尔假。',
+}
+
+HOVER_BUILTINS = {
+    '#json_encode': '`#json_encode(v)` → JSON 字符串。dict 保持插入顺序。',
+    '#json_decode': '`#json_decode(s)` → dict/list/int/float/str/bool/none；非法输入报错。',
+    '#re_groups': '`#re_groups(s; pattern)` → 首个正则匹配的捕获组列表；组 0 为整段，未匹配组为 none。',
+    '#sha256': '`#sha256(s)` → 64 位十六进制 SHA-256 摘要（FIPS 180-4 验证）。',
+    '#aes_encrypt': '`#aes_encrypt(data; key)` → AES-256-CBC+PKCS7 加密的 base64（密钥经 SHA-256 派生）。',
+    '#aes_decrypt': '`#aes_decrypt(b64; key)` → 用相同密钥解密 base64 密文。',
+    '#proc_run': '`#proc_run(cmd)` → `{"exit": 码, "output": stdout}`。',
+    '#ffi_call': '`#ffi_call("dll"; "func"; arg...)` → 调用共享库 C 函数，返回 64 位整数。',
+    '#thread': '`#thread(函数)` → 新线程执行函数，返回线程 id。',
+    '#thread_join': '`#thread_join(id)` → 等待线程结束并返回其返回值。',
+    '#thread_count': '`#thread_count()` → 存活线程数。',
+    '#lock': '`#lock(name)` → 获取命名互斥锁。',
+    '#unlock': '`#unlock(name)` → 释放命名互斥锁。',
+    '#http_get': '`#http_get(url)` → GET 请求响应文本。',
+    '#http_post': '`#http_post(url; body)` → POST 请求响应文本。',
+    '#tcp_ping': '`#tcp_ping(host; port)` → TCP 连通性测试。',
+    '#bin_read': '`#bin_read(path)` → 字节列表。',
+    '#bin_write': '`#bin_write(path; bytes)` → 写入字节列表。',
+    '#bin_hex': '`#bin_hex(bytes)` → 十六进制字符串。',
+    '#bin_unhex': '`#bin_unhex(s)` → 十六进制字符串还原为字节列表。',
+    '#bin_base64_encode': '`#bin_base64_encode(bytes)` → base64。',
+    '#bin_base64_decode': '`#bin_base64_decode(s)` → base64 还原为字节列表。',
+    '#print': '`print(a; b; ...)` → 输出并以空格分隔。',
+    '#fread': '`#fread(path)` → 读取整个文件文本。',
+    '#fwrite': '`#fwrite(path; text)` → 覆盖写入文件。',
+    '#fappend': '`#fappend(path; text)` → 追加写入文件。',
+    '#shell': '`#shell(cmd)` → 执行系统命令并返回输出。',
+    '#len': '`#len(v)` → 字符串/列表/dict 的长度。',
+    '#type': '`#type(v)` → 值的类型名。',
+    '#str': '`#str(v)` → 转字符串。', '#int': '`#int(v)` → 转整数。',
+    '#float': '`#float(v)` → 转浮点。', '#bool': '`#bool(v)` → 转布尔。',
+}
 
 
 def collect_identifiers(text):
@@ -194,26 +284,99 @@ def completions(text):
         out.append(item(name, '变量', 6))  # Variable
     return out
 
+
+def hover(text, line, character):
+    lines = text.split('\n')
+    if line >= len(lines):
+        return None
+    line_text = lines[line]
+    left = line_text[:character]
+    m = re.search(r'[a-zA-Z_#][a-zA-Z0-9_#]*$', left)
+    if not m:
+        return None
+    word = m.group(0)
+    md = None
+    if word.startswith('#'):
+        md = HOVER_BUILTINS.get(word)
+    elif word in HOVER_KEYWORDS:
+        md = HOVER_KEYWORDS[word]
+    elif re.match(r'^\s*def\s+' + re.escape(word) + r'\b', line_text):
+        md = '函数 `' + word + '`：' + line_text.strip()
+    if md is None:
+        return None
+    return {
+        "contents": {
+            "kind": "markdown",
+            "value": "**`" + word + "`**\n\n" + md,
+        },
+        "range": {
+            "start": {"line": line, "character": max(0, character - len(word))},
+            "end": {"line": line, "character": character},
+        },
+    }
+
+
+def document_symbols(text):
+    symbols = []
+    for i, line in enumerate(text.split('\n')):
+        m = re.match(r'^\s*def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:\(|-)', line)
+        if m:
+            name = m.group(1)
+            symbols.append({
+                "name": name,
+                "kind": 12,  # Function
+                "range": {
+                    "start": {"line": i, "character": 0},
+                    "end": {"line": i, "character": len(line)},
+                },
+                "selectionRange": {
+                    "start": {"line": i, "character": 0},
+                    "end": {"line": i, "character": len(line)},
+                },
+            })
+    return symbols
+
+
+def folding_ranges(text):
+    lines = text.split('\n')
+    ranges = []
+    depth = 0
+    start = None
+    for i, line in enumerate(lines):
+        d = 0
+        for ch in line:
+            if ch == '-':
+                d += 1
+            else:
+                break
+        if d > depth and start is None:
+            start = i
+            depth = d
+        elif d < depth:
+            if start is not None and i - 1 > start:
+                ranges.append({
+                    "startLine": start,
+                    "startCharacter": 0,
+                    "endLine": i - 1,
+                    "endCharacter": len(lines[i - 1]),
+                })
+            depth = d
+            start = i if d > 0 else None
+    if start is not None and len(lines) - 1 > start:
+        ranges.append({
+            "startLine": start,
+            "startCharacter": 0,
+            "endLine": len(lines) - 1,
+            "endCharacter": len(lines[-1]),
+        })
+    return ranges
+
+
 def line_end(text, line_no):
     lines = text.split('\n')
     if line_no >= len(lines):
         return {"line": line_no, "character": 0}
     return {"line": line_no, "character": len(lines[line_no])}
-
-
-def make_insert_action(title, text, line_no, insert_text):
-    end = line_end(text, line_no)
-    return {
-        "title": title,
-        "kind": "quickfix",
-        "edit": {
-            "changes": {
-                # uri 会在外面替换
-            }
-        },
-        "_insert": insert_text,
-        "_pos": end,
-    }
 
 
 def code_actions(uri, text, diags):
@@ -251,7 +414,7 @@ def code_actions(uri, text, diags):
             suggestion = ('补上右括号 )', ')')
 
         if suggestion:
-            title,insert_text = suggestion
+            title, insert_text = suggestion
             edit = {
                 "range": {"start": end, "end": end},
                 "newText": insert_text,
@@ -293,11 +456,13 @@ def main():
             write_message(stdout, make_response(id_, {
                 "capabilities": {
                     "textDocumentSync": 1,
-                    "completionProvider": {"triggerCharacters": []},
+                    "completionProvider": {"triggerCharacters": ['#']},
                     "hoverProvider": True,
-                    "codeActionProvider": True,       
+                    "codeActionProvider": True,
+                    "documentSymbolProvider": True,
+                    "foldingRangeProvider": True,
                 },
-                "serverInfo": {"name": "vesna-lsp", "version": "0.3.0"},
+                "serverInfo": {"name": "vesna-lsp", "version": "0.4.0"},
             }))
 
         elif method == 'initialized':
@@ -343,7 +508,20 @@ def main():
             write_message(stdout, make_response(id_, completions(text)))
 
         elif method == 'textDocument/hover':
-            write_message(stdout, make_response(id_, None))
+            uri = params['textDocument']['uri']
+            text = DOCS.get(uri, '')
+            pos = params.get('position', {})
+            write_message(stdout, make_response(id_, hover(text, pos.get('line', 0), pos.get('character', 0))))
+
+        elif method == 'textDocument/documentSymbol':
+            uri = params['textDocument']['uri']
+            text = DOCS.get(uri, '')
+            write_message(stdout, make_response(id_, document_symbols(text)))
+
+        elif method == 'textDocument/foldingRange':
+            uri = params['textDocument']['uri']
+            text = DOCS.get(uri, '')
+            write_message(stdout, make_response(id_, folding_ranges(text)))
 
         elif method == 'shutdown':
             write_message(stdout, make_response(id_, None))

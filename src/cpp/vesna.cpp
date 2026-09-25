@@ -30,7 +30,7 @@ namespace vesna {
 
 static std::string parentDir(const std::string& path);
 static std::string strFloat(double f);
-const std::string VERSION = "1.2.0";
+const std::string VERSION = "1.3.0";
 
 
 // ============================================================
