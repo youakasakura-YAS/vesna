@@ -26,7 +26,7 @@ jobs:
         shell: msys2 {0}
         run: |
           cd src/cpp
-          g++ -std=c++17 -O3 -flto -static -Wall -Wextra vesna.cpp main.cpp -o vesna.exe -ladvapi32 -lws2_32
+          g++ -std=c++17 -O3 -flto -static -Wall -Wextra vesna.cpp lsp.cpp main.cpp -o vesna.exe -ladvapi32 -lws2_32
 
       - name: Package VSCode extension (.vsix)
         run: |
