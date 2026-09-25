@@ -15,6 +15,9 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#ifdef _WIN32
+#include <conio.h>
+#endif
 #include <iterator>
 #include <random>
 #include <regex>
@@ -30,7 +33,7 @@ namespace vesna {
 
 static std::string parentDir(const std::string& path);
 static std::string strFloat(double f);
-const std::string VERSION = "1.4.0";
+const std::string VERSION = "1.5.0";
 
 
 // ============================================================
@@ -4532,6 +4535,54 @@ int runFileDbg(const std::string& path, const std::vector<std::string>& argv) {
     return runSource(src, argv, parentDir(path), path, true, true, path);
 }
 
+// REPL 行读取（Windows 逐字符），Tab 补全内置名
+static std::string replReadLine() {
+    std::string line;
+    while (true) {
+        int ch = _getch();
+        if (ch == '\r' || ch == '\n') {
+            std::cout << "\n";
+            return line;
+        }
+        if (ch == '\t') {
+            // 找行内最后一个以 # 开头的 token
+            size_t pos = line.find_last_of(" \t;(),[]{}");
+            std::string tok = (pos == std::string::npos) ? line : line.substr(pos + 1);
+            if (tok.size() >= 2 && tok[0] == '#') {
+                std::string prefix = tok.substr(1);
+                std::vector<std::string> hits;
+                for (auto& nm : g_builtinNames) {
+                    if (nm.first.compare(0, prefix.size(), prefix) == 0)
+                        hits.push_back("#" + nm.first);
+                }
+                if (hits.size() == 1) {
+                    std::string rest = hits[0].substr(tok.size());
+                    std::cout << rest;
+                    line += rest;
+                } else if (hits.size() > 1) {
+                    std::cout << "\n";
+                    for (auto& h : hits) std::cout << h << "  ";
+                    std::cout << "\n>>> " << line;
+                } else {
+                    // 无匹配：不打扰
+                }
+            }
+            continue;
+        }
+        if (ch == '\b' || ch == 127) {
+            if (!line.empty()) { line.pop_back(); std::cout << "\b \b"; }
+            continue;
+        }
+        if (ch == 3) {  // Ctrl+C：清行
+            std::cout << "^C\n>>> ";
+            line.clear();
+            continue;
+        }
+        line += (char)ch;
+        std::cout << (char)ch;
+    }
+}
+
 void repl() {
     std::cout << "Vesna " << VERSION << " — Scripts of spring\n输入空行退出\n\n";
     std::string buf;
@@ -4539,8 +4590,8 @@ void repl() {
     while (true) {
         std::cout << (buf.empty() ? ">>> " : "... ");
         std::cout.flush();
-        std::string line;
-        if (!std::getline(std::cin, line)) { std::cout << "\n"; break; }
+        std::string line = replReadLine();
+        if (std::cin.eof()) { std::cout << "\n"; break; }
         if (line.empty() && buf.empty()) break;
         if (!buf.empty()) buf += "\n";
         buf += line;

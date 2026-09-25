@@ -2,7 +2,19 @@
 
 [English](CHANGELOG.md) | [中文](CHANGELOG.zh-CN.md)
 
+## 1.5.0
+
+### Added
+- **vpm publish**: `vesna --pkg publish` — one command to publish a package: validates `vesna-pkg.json`, packs `entry` + metadata into `<name>-<version>.zip` (PowerShell `Compress-Archive` on Windows / `zip` elsewhere), computes the zip `sha256`, writes `registry-entry.json`, and updates a local `registry.json` if present
+- **`#call(fname; arg...)` builtin** (dispatch 176): dynamic function invocation by name string — enables package frameworks like the new `vesna-test` test framework
+- **`vesna-test` package 1.0.0**: unit test framework (`test_case(name; "fn")`, `test_run()`, `test_eq`, `test_assert`, `test_true`, `test_count`) — published to the vesna-pkg registry
+- **Import respects package `entry`**: `import` now reads `vesna-pkg.json`'s `entry` field for vpm packages (previously only `<package-name>.ves` was tried); imported package globals can also see caller script functions via the parent env chain
+- **`vesna --fmt <file>`**: source formatter — normalizes indentation (`-` runs), trims trailing whitespace, collapses blank lines (syntax-preserving, line-level only)
+- **Syntax highlighting 1.1-1.4**: `vesna.tmLanguage.json` builtin patterns extended to all 176 builtins (thread/lock/http/bin/json/crypto/proc/ffi/csv/ini/xml/call)
+- **REPL Tab completion** (Windows): type `#js<Tab>` etc. — unique match auto-completes, multiple matches list candidates
+
 ## 1.4.0
+
 
 ### Added
 - **Native C++ LSP**: `vesna.exe --lsp` — a built-in Language Server (stdio JSON-RPC) with diagnostics (reuses the C++ `Parser` error collection), completion (all builtins from the single name table plus document identifiers, `#` trigger), hover (builtin/keyword docs + function defs), `documentSymbol` (functions) and `foldingRange` (indent blocks)

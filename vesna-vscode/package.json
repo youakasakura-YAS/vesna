@@ -2,12 +2,18 @@
   "name": "vesna",
   "publisher": "vesna",
   "displayName": "Vesna",
-  "description": "Vesna 语言支持 — LSP 0.5.0（原生 C++，诊断/补全/悬停/符号/折叠）",
+  "description": "Vesna 语言支持 — LSP（原生 C++）+ 语法高亮 176 内置 + 补全/悬停/符号/折叠",
   "icon": "icon.png",
-  "version": "0.5.0",
-  "engines": { "vscode": "^1.60.0" },
-  "categories": ["Programming Languages"],
-  "activationEvents": ["onLanguage:vesna"],
+  "version": "0.6.0",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:vesna"
+  ],
   "main": "./extension.js",
   "dependencies": {
     "vscode-languageclient": "^8.1.0"
@@ -16,8 +22,12 @@
     "languages": [
       {
         "id": "vesna",
-        "aliases": ["Vesna"],
-        "extensions": [".ves"],
+        "aliases": [
+          "Vesna"
+        ],
+        "extensions": [
+          ".ves"
+        ],
         "configuration": "./language-configuration.json",
         "icon": {
           "light": "./icons/vesna-16.png",
@@ -33,7 +43,10 @@
       }
     ],
     "snippets": [
-      { "language": "vesna", "path": "./snippets/vesna.json" }
+      {
+        "language": "vesna",
+        "path": "./snippets/vesna.json"
+      }
     ]
   }
 }

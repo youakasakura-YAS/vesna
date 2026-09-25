@@ -3,6 +3,7 @@
 #include "platform.h"
 
 #include <iostream>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -141,6 +142,41 @@ print(""),
 print("请重开 cmd 后生效。"),
 )VES";
 
+std::string formatSource(const std::string& src) {
+    // 行级格式化：去行首尾空白、规范化 '-' 缩进、压缩连续空行（不改语法/不移动 token）
+    std::vector<std::string> lines;
+    std::string cur;
+    for (char ch : src) {
+        if (ch == '\n') { lines.push_back(cur); cur.clear(); }
+        else if (ch != '\r') cur += ch;
+    }
+    if (!cur.empty()) lines.push_back(cur);
+    std::vector<std::string> out;
+    bool prev_blank = false;
+    for (auto& raw : lines) {
+        size_t b = raw.find_first_not_of(" \t");
+        std::string body = (b == std::string::npos) ? "" : raw.substr(b);
+        size_t e = body.find_last_not_of(" \t");
+        body = (e == std::string::npos) ? "" : body.substr(0, e + 1);
+        if (body.empty()) {
+            if (!prev_blank && !out.empty()) out.push_back("");
+            prev_blank = true;
+            continue;
+        }
+        prev_blank = false;
+        size_t nd = 0;
+        while (nd < body.size() && body[nd] == '-') ++nd;
+        std::string rest = body.substr(nd);
+        size_t rb = rest.find_first_not_of(" \t");
+        rest = (rb == std::string::npos) ? "" : rest.substr(rb);
+        out.push_back(std::string(nd, '-') + rest);
+    }
+    while (!out.empty() && out.back().empty()) out.pop_back();
+    std::string res;
+    for (auto& l : out) res += l + "\n";
+    return res;
+}
+
 int mainCli(int argc, char** argv) {
     // 控制台 UTF-8，保证中文输出正确
     setConsoleUtf8();
@@ -182,6 +218,30 @@ int mainCli(int argc, char** argv) {
     if (arg == "--lsp") {
         runLsp();
         return 0;
+    }
+
+    if (arg == "--fmt") {
+        if (argc < 3) {
+            std::cerr << "用法: vesna --fmt <脚本.ves>" << std::endl;
+            return 1;
+        }
+        std::string path = argv[2];
+        if (!fileExists(path)) {
+            std::cerr << "找不到文件: " << path << std::endl;
+            return 1;
+        }
+        try {
+            std::string src = readFileUtf8(path);
+            std::string out = formatSource(src);
+            std::ofstream f(path, std::ios::binary | std::ios::trunc);
+            f.write(out.data(), (std::streamsize)out.size());
+            f.close();
+            std::cout << "已格式化 " << path << std::endl;
+            return 0;
+        } catch (VesnaError& e) {
+            std::cerr << "错误: " << e.str() << std::endl;
+            return 1;
+        }
     }
 
     if (arg == "--debug") {
@@ -235,7 +295,8 @@ int mainCli(int argc, char** argv) {
                   << "  vesna --uninstall            卸载 Vesna（删目录+环境变量+注册表）\n"
                   << "  vesna --debug <脚本>         调试运行脚本（断点/单步/变量）\n"
                   << "  vesna --lsp                  原生 LSP 服务器（stdio，编辑器集成）\n"
-                  << "  vesna --pkg <命令>           包管理器（init/install/remove/list/search）\n"
+                  << "  vesna --pkg <命令>           包管理器（init/install/remove/list/search/publish）\n"
+                  << "  vesna --fmt <脚本.ves>     格式化源码（缩进/空白/空行规范化）\n"
                   << "  vesna --version              显示版本\n"
                   << "  vesna --help                 显示帮助\n";
         return 0;

@@ -2,7 +2,19 @@
 
 [English](CHANGELOG.md) | [中文](CHANGELOG.zh-CN.md)
 
+## 1.5.0
+
+### 新增
+- **vpm publish**：`vesna --pkg publish` —— 一键发布包：校验 `vesna-pkg.json`、将 `entry` + 元数据打包为 `<name>-<version>.zip`（Windows 用 PowerShell `Compress-Archive`，其他平台用 `zip`）、计算 zip `sha256`、写入 `registry-entry.json`，若存在本地 `registry.json` 则自动追加条目
+- **`#call(fname; arg...)` 内置**（dispatch 176）：按函数名字符串动态调用 —— 支撑包级框架（如新的 `vesna-test` 测试框架）
+- **`vesna-test` 包 1.0.0**：单元测试框架（`test_case(name; "fn")`、`test_run()`、`test_eq`、`test_assert`、`test_true`、`test_count`）—— 已发布到 vesna-pkg registry
+- **import 支持包的 `entry` 字段**：`import` 现在会读取 vpm 包 `vesna-pkg.json` 的 `entry`（此前只尝试 `<包名>.ves`）；导入包的全局环境通过 parent 链可查看到调用方脚本的函数
+- **`vesna --fmt <file>`**：源码格式化器 —— 规范化缩进（`-` 层数）、去除行尾空白、压缩连续空行（纯行级，不改语法）
+- **语法高亮 1.1-1.4**：`vesna.tmLanguage.json` 内置模式扩展至全部 176 个内置（thread/lock/http/bin/json/crypto/proc/ffi/csv/ini/xml/call）
+- **REPL Tab 补全**（Windows）：输入 `#js<Tab>` 等 —— 唯一匹配自动补全，多匹配列出候选
+
 ## 1.4.0
+
 
 ### 新增
 - **原生 C++ LSP**：`vesna.exe --lsp` —— 内置语言服务器（stdio JSON-RPC），诊断复用 C++ `Parser` 错误收集；补全覆盖全部内置（单一名字表 + 文档标识符，`#` 触发）；悬停（内置/关键字文档 + 函数定义）；`documentSymbol`（函数）；`foldingRange`（缩进块）
