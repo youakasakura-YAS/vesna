@@ -3,6 +3,8 @@
 <img src="icon.png" width="128" alt="Vesna">
 
 > *Scripts of spring*
+>
+> **Documentation**: https://youakasakura-YAS.github.io/vesna-docs/ (中文 | English)
 
 [English](README.md) | [中文](README.zh-CN.md)
 
