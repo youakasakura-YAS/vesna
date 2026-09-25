@@ -34,7 +34,7 @@ namespace vesna {
 
 static std::string parentDir(const std::string& path);
 static std::string strFloat(double f);
-const std::string VERSION = "1.7.0";
+const std::string VERSION = "1.8.0";
 
 
 // ============================================================
@@ -4312,9 +4312,17 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
         }
         return out;
     }
-    case 165: {  // -sha256(s)
+    case 165: {  // -sha256(s | bytes) — 1.8.0 支持字节列表（配 #bin_read 做真实文件哈希）
         Value s = ev(0);
-        if (s.t() != Value::T::STR) throw VesnaError("-sha256 需要字符串");
+        if (s.t() == Value::T::LIST) {
+            std::string bytes;
+            for (auto& b : s.list()->items) {
+                if (b.t() != Value::T::INT) throw VesnaError("-sha256 列表须为字节整数");
+                bytes.push_back((char)b.i());
+            }
+            return mkStr(sha256Hex(bytes));
+        }
+        if (s.t() != Value::T::STR) throw VesnaError("-sha256 需要字符串或字节列表");
         return mkStr(sha256Hex(s.s()));
     }
     case 166: {  // -aes_encrypt(data; key) -> base64

@@ -20,6 +20,21 @@ function activate(context) {
     };
     const clientOptions = {
         documentSelector: [{ scheme: 'file', language: 'vesna' }],
+        // 1.8.0: 启动失败时给出可操作提示（未安装/未配置 vesna.exe 时避免静默失败）
+        errorHandler: {
+            error(error, message, count) {
+                if (count > 3) {
+                    vscode.window.showErrorMessage(
+                        'Vesna LSP 启动失败：请确认已安装 vesna（或在工作区设置 vesna.executablePath 指向 vesna.exe）。'
+                    );
+                    return { action: vscode.ErrorAction.Shutdown };
+                }
+                return { action: vscode.ErrorAction.Continue };
+            },
+            closed() {
+                return { action: vscode.ErrorAction.Restart };
+            },
+        },
     };
     client = new LanguageClient('vesna', 'Vesna LSP', serverOptions, clientOptions);
     client.start();

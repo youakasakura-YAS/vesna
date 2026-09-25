@@ -2,7 +2,20 @@
 
 [English](CHANGELOG.md) | [中文](CHANGELOG.zh-CN.md)
 
+## 1.8.0
+
+### 新增
+- **vpm 校验增强**：
+  - 安装前扫描解压内容，拒绝 zip 路径穿越（`..`）与绝对路径条目——恶意包被拒绝并清理
+  - `vesna-pkg.json` 的 `entry` 只允许纯文件名（不允许 `..` / 盘符 / 路径分隔符）
+  - `registry.json` 缓存每次加载都做结构校验；损坏的缓存会提示、删除并重新下载
+  - 本地缓存：下载的包缓存到 `packages\_cache\<name>-<ver>.zip`；sha256 匹配的缓存可**离线安装**（无需网络）
+- **LSP v1.8.0**：`textDocument/definition`（跳转定义）、`textDocument/signatureHelp`（内置与用户函数参数提示）、`workspace/symbol`（跨文档符号）；服务端版本更新
+- **`#sha256`** 现接受字节列表：`#sha256(#bin_read(path))` 对真实文件字节做哈希（此前 `#fread` 文本化会破坏二进制）
+- VSCode 插件 0.8.0：LSP 启动失败时给出可操作提示（配置 `vesna.executablePath`）
+
 ## 1.7.0
+
 
 ### 变更
 - **单文件分发** —— 标准库（`csv.ves` / `json.ves` / `pkg.ves` / `stat.ves` / `text.ves`，约 19 KB）已嵌入可执行文件。`vesna.exe` 无需 `lib/` 目录、无需 `VESNA_HOME`、无需任何其他文件即可独立运行（含 `--pkg`）——拷贝单个 exe 即全部可用。外部 `lib/` 文件仍优先，用户依然可以通过在脚本旁或 `lib/` 中放置 `.ves` 覆盖内置模块。

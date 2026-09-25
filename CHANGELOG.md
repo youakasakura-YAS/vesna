@@ -2,7 +2,20 @@
 
 [English](CHANGELOG.md) | [中文](CHANGELOG.zh-CN.md)
 
+## 1.8.0
+
+### Added
+- **vpm validation hardening**:
+  - Zip extraction is scanned for path-traversal (`..`) and absolute-path entries before install — malicious packages are rejected and cleaned up
+  - `entry` in `vesna-pkg.json` may only be a plain filename (no `..`, drive letter, or path separators)
+  - `registry.json` cache is structure-validated on every load; a corrupt cache is reported, deleted and re-downloaded
+  - Local cache: downloaded packages are cached to `packages\_cache\<name>-<ver>.zip`; a sha256-matching cache installs **offline** (no network)
+- **LSP v1.8.0**: `textDocument/definition` (go-to-definition), `textDocument/signatureHelp` (parameter hints for builtins and user functions), `workspace/symbol` (cross-document symbols); server version bumped
+- **`#sha256`** now accepts a byte list: `#sha256(#bin_read(path))` hashes the real file bytes (previously `#fread` text-mangled binary)
+- VSCode extension 0.8.0: LSP startup failure shows an actionable message (config `vesna.executablePath`)
+
 ## 1.7.0
+
 
 ### Changed
 - **Single-file distribution** — the standard library (`csv.ves` / `json.ves` / `pkg.ves` / `stat.ves` / `text.ves`, ~19 KB) is now embedded into the executable. `vesna.exe` runs standalone with no `lib/` directory, no `VESNA_HOME` and no other files — copy one exe and everything works (including `--pkg`). External `lib/` files still take precedence, so users can still override modules by dropping a `.ves` next to their script or in `lib/`.

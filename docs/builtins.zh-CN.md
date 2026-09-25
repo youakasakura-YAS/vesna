@@ -434,7 +434,7 @@ print(#f"name=(name), age=(age)"),
 
 | 函数 | 说明 |
 |---|---|
-| `#sha256(s)` | SHA-256 十六进制摘要（64 字符），已按 FIPS 180-4 向量验证 |
+| `#sha256(s)` | SHA-256 十六进制摘要（64 字符），已按 FIPS 180-4 向量验证；1.8.0 起也接受字节列表（`#sha256(#bin_read(path))` 做真实文件哈希） |
 | `#aes_encrypt(data; key)` | AES-256-CBC + PKCS7，密钥经 SHA-256 派生，返回 base64（已按 FIPS-197 验证） |
 | `#aes_decrypt(b64; key)` | 用相同密钥解密 `#aes_encrypt` 产生的 base64 密文 |
 

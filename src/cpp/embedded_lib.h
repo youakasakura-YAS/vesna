@@ -290,6 +290,46 @@ def version_satisfies(have; want)-
 --back(true),
 -back(false),
 
+def walk_files(dir)-
+-/* 递归列出全部文件绝对路径 */
+-out = [],
+-entries = #ls(dir),
+-for e in entries-
+--if e == "." or e == ".."-
+---continue,
+--full = dir + "\\" + e,
+--if #is_dir(full)-
+---sub = walk_files(full),
+---for f in sub-
+----#append(out; f),
+--else-
+---#append(out; full),
+-back(out),
+
+def check_zip_safety(dir)-
+-/* zip 解压后路径穿越防护：拒绝含 .. 或盘符的相对路径条目 */
+-files = walk_files(dir),
+-for f in files-
+--rel = #sub(f; #len(dir) + '2'; #len(f)),
+--if #find(rel; "..") != '0'-
+---back(err("zip 包含不安全路径（..）: " + rel + " —— 已中止并清理")),
+--if #find(rel; ":") != '0'-
+---back(err("zip 包含绝对路径条目: " + rel + " —— 已中止并清理")),
+-back(true),
+
+def validate_registry(reg)-
+-/* registry 索引结构校验 */
+-if reg == none or #type(reg) != "list"-
+--back(false),
+-for pkg in reg-
+--if #type(pkg) != "dict"-
+---back(false),
+--if not #has_key(pkg; "name") or #type(pkg["name"]) != "str"-
+---back(false),
+--if not #has_key(pkg; "url") or #type(pkg["url"]) != "str"-
+---back(false),
+-back(true),
+
 def validate_meta(meta; base_dir)-
 -/* 元数据校验：name / version / entry / dependencies */
 -if meta == none or #type(meta) != "dict"-
@@ -304,6 +344,8 @@ def validate_meta(meta; base_dir)-
 --entry = meta["entry"],
 --if #type(entry) != "str"-
 ---back(err("vesna-pkg.json 的 entry 须为字符串")),
+--if #find(entry; "..") != '0' or #find(entry; ":") != '0' or #find(entry; "/") != '0' or #find(entry; "\\") != '0'-
+---back(err("entry 路径非法（不允许 .. / 盘符 / 目录分隔符）: " + entry)),
 --if not #fexists(base_dir + "\\" + entry)-
 ---back(err("entry 文件不存在: " + entry)),
 -back(true),
@@ -387,7 +429,7 @@ def install_from_dir(src; depth)-
 def install_zip(zip_path; depth; expect_sha)-
 -/* sha256 完整性校验 */
 -if expect_sha != ""-
---got = #sha256(#fread(zip_path)),
+--got = #sha256(#bin_read(zip_path)),
 --if got != expect_sha-
 ---back(err("sha256 校验失败（期望 " + expect_sha + "，实际 " + got + "）")),
 -tmp = home + "\\packages\\_tmp",
@@ -395,6 +437,10 @@ def install_zip(zip_path; depth; expect_sha)-
 --#rmdir(tmp),
 -#mkdirs(tmp),
 -root = unzip(zip_path; tmp),
+-if not check_zip_safety(tmp)-
+--if #fexists(tmp)-
+---#rmdir(tmp),
+--back(false),
 -ok = install_from_dir(root; depth),
 -if #fexists(tmp)-
 --#rmdir(tmp),
@@ -402,11 +448,20 @@ def install_zip(zip_path; depth; expect_sha)-
 
 def fetch_registry()-
 -if #fexists(reg_file)-
---back(read_json(reg_file)),
+--cached = read_json(reg_file),
+--if validate_registry(cached)-
+---back(cached),
+--print("  警告: registry 缓存损坏或结构非法，重新下载 ..."),
+--#fremove(reg_file),
 -print("下载 registry 索引 ..."),
 -#shell("curl -L -s -o \"" + reg_file + "\" \"" + default_reg + "\""),
 -if #fexists(reg_file)-
---back(read_json(reg_file)),
+--fresh = read_json(reg_file),
+--if validate_registry(fresh)-
+---back(fresh),
+--print("错误: registry 索引无效（请检查网络或 URL，可手动: vesna --pkg registry <URL>）"),
+--#fremove(reg_file),
+--back(none),
 -print("错误: registry 索引下载失败（可手动: vesna --pkg registry <URL>）"),
 -back(none),
 
@@ -422,6 +477,22 @@ def install_by_name(name; depth)-
 ---if not #has_key(pkg; "url")-
 ----print("  错误: registry 中 " + name + " 缺少 url"),
 ----back(false),
+---expect_sha = "",
+---if #has_key(pkg; "sha256") and #type(pkg["sha256"]) == "str"-
+----expect_sha = pkg["sha256"],
+---pver = "0.0.0",
+---if #has_key(pkg; "version") and #type(pkg["version"]) == "str"-
+----pver = pkg["version"],
+---/* 本地缓存：命中且 sha256 匹配则离线安装 */
+---cache_dir = home + "\\packages\\_cache",
+---cached = cache_dir + "\\" + name + "-" + pver + ".zip",
+---if #fexists(cached) and expect_sha != ""-
+----c_sha = #sha256(#bin_read(cached)),
+----if c_sha == expect_sha-
+-----print("  命中本地缓存 " + name + "-" + pver + ".zip（sha256 匹配，离线安装）"),
+-----ok = install_zip(cached; depth; expect_sha),
+-----back(ok),
+----print("  缓存 sha256 不匹配，重新下载 ..."),
 ---tmp_zip = home + "\\packages\\_tmp.zip",
 ---if #fexists(tmp_zip)-
 ----#fremove(tmp_zip),
@@ -430,9 +501,13 @@ def install_by_name(name; depth)-
 ---if not #fexists(tmp_zip)-
 ----print("  错误: 下载失败（请检查网络或 registry URL）"),
 ----back(false),
----expect_sha = "",
----if #has_key(pkg; "sha256") and #type(pkg["sha256"]) == "str"-
-----expect_sha = pkg["sha256"],
+---/* 缓存副本：仅当 sha256 已知且匹配时保留 */
+---if expect_sha != ""-
+----d_sha = #sha256(#bin_read(tmp_zip)),
+----if d_sha == expect_sha-
+-----#mkdirs(cache_dir),
+-----#copy(tmp_zip; cached),
+----print("  已缓存 " + name + "-" + pver + ".zip"),
 ---ok = install_zip(tmp_zip; depth; expect_sha),
 ---if #fexists(tmp_zip)-
 ----#fremove(tmp_zip),
@@ -607,7 +682,7 @@ if cmd == "publish"-
 -if not #fexists(zip_path)-
 --print("错误: 打包失败"),
 --#exit('1'),
--checksum = #sha256(#fread(zip_path)),
+-checksum = #sha256(#bin_read(zip_path)),
 -print("已生成 " + zip_name + "（sha256: " + checksum + "）"),
 -/* registry 条目 */
 -desc = "",

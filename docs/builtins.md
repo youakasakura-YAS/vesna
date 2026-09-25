@@ -434,7 +434,7 @@ Bytes are plain integers, so existing list ops (`#len`, `#slice`, `#append`, ...
 
 | Function | Description |
 |---|---|
-| `#sha256(s)` | SHA-256 hex digest (64 chars) — verified against FIPS 180-4 vectors |
+| `#sha256(s)` | SHA-256 hex digest (64 chars) — verified against FIPS 180-4 vectors; since 1.8.0 also accepts a byte list (`#sha256(#bin_read(path))` for real file hashes) |
 | `#aes_encrypt(data; key)` | AES-256-CBC + PKCS7, key derived via SHA-256, returns base64 (verified against FIPS-197) |
 | `#aes_decrypt(b64; key)` | decrypt base64 ciphertext produced by `#aes_encrypt` with the same key |
 

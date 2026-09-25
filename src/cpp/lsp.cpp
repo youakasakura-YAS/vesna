@@ -248,6 +248,153 @@ std::string hoverJson(const std::string& text, int line, int character) {
 
 // ---------- 符号 / 折叠 ----------
 
+struct SymLoc {
+    std::string name;
+    int line;
+    int len;
+};
+
+std::vector<SymLoc> collectDefs(const std::string& text) {
+    std::vector<SymLoc> out;
+    auto lines = splitLines(text);
+    std::regex defRe(R"(^\s*def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:\(|-))");
+    for (size_t i = 0; i < lines.size(); ++i) {
+        std::smatch m;
+        if (std::regex_search(lines[i], m, defRe))
+            out.push_back({m.str(1), (int)i, (int)lines[i].size()});
+    }
+    return out;
+}
+
+// textDocument/definition：标识符 -> def 行
+std::string definitionJson(const std::string& uri, const std::string& text, int line, int character) {
+    auto lines = splitLines(text);
+    if (line < 0 || line >= (int)lines.size()) return "null";
+    const std::string& lineText = lines[(size_t)line];
+    std::string left = lineText.substr(0, (size_t)std::max(0, character));
+    std::string right = lineText.substr((size_t)std::max(0, character));
+    std::regex wordReL(R"([a-zA-Z_][a-zA-Z0-9_]*$)");
+    std::smatch ml;
+    if (!std::regex_search(left, ml, wordReL)) return "null";
+    std::string word = ml.str();
+    std::regex wordReR(R"(^[a-zA-Z0-9_]*)");
+    std::smatch mr;
+    if (std::regex_search(right, mr, wordReR)) word += mr.str();
+    if (!word.empty() && word[0] == '#') return "null";  // 内置无源码定义
+    for (auto& s : collectDefs(text)) {
+        if (s.name == word) {
+            std::string out = "[{\"uri\":" + jsonEscape(uri) + ",";
+            out += "\"range\":{\"start\":{\"line\":" + std::to_string(s.line) + ",\"character\":0},";
+            out += "\"end\":{\"line\":" + std::to_string(s.line) + ",\"character\":" + std::to_string(s.len) + "}}}";
+            return out;
+        }
+    }
+    return "null";
+}
+
+// workspace/symbol：跨文档 def 符号
+std::string workspaceSymbolsJson() {
+    std::string out = "[";
+    bool first = true;
+    for (auto& [uri, doc] : g_docs) {
+        for (auto& s : collectDefs(doc.text)) {
+            if (!first) out += ",";
+            first = false;
+            out += "{\"name\":" + jsonEscape(s.name) + ",\"kind\":12,";
+            out += "\"location\":{\"uri\":" + jsonEscape(uri) + ",";
+            out += "\"range\":{\"start\":{\"line\":" + std::to_string(s.line) + ",\"character\":0},";
+            out += "\"end\":{\"line\":" + std::to_string(s.line) + ",\"character\":" + std::to_string(s.len) + "}}}";
+        }
+    }
+    out += "]";
+    return out;
+}
+
+// textDocument/signatureHelp：当前函数调用签名
+std::string signatureHelpJson(const std::string& text, int line, int character) {
+    auto lines = splitLines(text);
+    if (line < 0 || line >= (int)lines.size()) return "null";
+    const std::string& lineText = lines[(size_t)line];
+    std::string left = lineText.substr(0, (size_t)std::max(0, character));
+    // 取光标前最后一个 '('，往前找函数名
+    size_t paren = left.rfind('(');
+    if (paren == std::string::npos) return "null";
+    std::regex nameRe(R"([a-zA-Z_#][a-zA-Z0-9_#]*$)");
+    std::string before = left.substr(0, paren);
+    std::smatch m;
+    if (!std::regex_search(before, m, nameRe)) return "null";
+    std::string fn = m.str();
+
+    std::string label;
+    std::vector<std::string> params;
+    bool isBuiltin = !fn.empty() && fn[0] == '#';
+    std::string key = isBuiltin ? fn.substr(1) : fn;
+    if (isBuiltin) {
+        auto it = LSP_HOVER.find(key);
+        if (it != LSP_HOVER.end()) {
+            // 从 hover 签名 "`#sha256(s)`" 提取参数
+            label = it->second;
+            size_t lp = label.find('(');
+            size_t rp = label.find(')');
+            if (lp != std::string::npos && rp != std::string::npos && rp > lp) {
+                std::string inside = label.substr(lp + 1, rp - lp - 1);
+                size_t start = 0;
+                for (size_t i = 0; i <= inside.size(); ++i) {
+                    if (i == inside.size() || inside[i] == ';') {
+                        std::string p = inside.substr(start, i - start);
+                        // 去掉默认值部分
+                        size_t eq = p.find('=');
+                        if (eq != std::string::npos) p = p.substr(0, eq);
+                        p = p.substr(p.find_first_not_of(" \t"));
+                        while (!p.empty() && (p.back() == ' ' || p.back() == '\t')) p.pop_back();
+                        if (!p.empty()) params.push_back(p);
+                        start = i + 1;
+                    }
+                }
+            }
+        } else {
+            label = "`#" + key + "(...)`";
+        }
+    } else {
+        // 用户函数：全文搜 def <fn>
+        for (auto& line0 : splitLines(text)) {
+            std::regex defRe(R"(^\s*def\s+)" + key + R"(\s*\(([^)]*)\))");
+            std::smatch dm;
+            if (std::regex_search(line0, dm, defRe)) {
+                label = dm.str(0);
+                std::string inside = dm.str(1);
+                size_t start = 0;
+                for (size_t i = 0; i <= inside.size(); ++i) {
+                    if (i == inside.size() || inside[i] == ';') {
+                        std::string p = inside.substr(start, i - start);
+                        p = p.substr(p.find_first_not_of(" \t"));
+                        while (!p.empty() && (p.back() == ' ' || p.back() == '\t')) p.pop_back();
+                        if (!p.empty()) params.push_back(p);
+                        start = i + 1;
+                    }
+                }
+                break;
+            }
+        }
+        if (label.empty()) return "null";
+    }
+    // 参数数量估算（光标后逗号/分号计数决定 activeParameter）
+    int activeParam = 0;
+    {
+        std::string after = left.substr(paren + 1);
+        int n = 0;
+        for (char ch : after) if (ch == ';') ++n;
+        activeParam = n;
+    }
+    std::string out = "{\"signatures\":[{\"label\":" + jsonEscape(label) + ",\"parameters\":[";
+    for (size_t i = 0; i < params.size(); ++i) {
+        if (i) out += ",";
+        out += "{\"label\":" + jsonEscape(params[i]) + "}";
+    }
+    out += "]}],\"activeSignature\":0,\"activeParameter\":" + std::to_string(activeParam) + "}";
+    return out;
+}
+
 std::string symbolsJson(const std::string& text) {
     auto lines = splitLines(text);
     std::string out = "[";
@@ -446,8 +593,11 @@ void runLsp() {
                 "\"textDocumentSync\":1,"
                 "\"completionProvider\":{\"triggerCharacters\":[\"#\"]},"
                 "\"hoverProvider\":true,\"codeActionProvider\":true,"
-                "\"documentSymbolProvider\":true,\"foldingRangeProvider\":true},"
-                "\"serverInfo\":{\"name\":\"vesna-lsp\",\"version\":\"1.4.0\"}}";
+                "\"documentSymbolProvider\":true,\"foldingRangeProvider\":true,"
+                "\"definitionProvider\":true,"
+                "\"signatureHelpProvider\":{\"triggerCharacters\":[\"(\"]},"
+                "\"workspaceSymbolProvider\":true},"
+                "\"serverInfo\":{\"name\":\"vesna-lsp\",\"version\":\"1.8.0\"}}";
             sendResponse(id, res);
         }
         else if (method == "initialized") {
@@ -498,6 +648,25 @@ void runLsp() {
             std::string uri = jsonFind(body, "uri");
             auto it = g_docs.find(uri);
             sendResponse(id, foldingJson(it != g_docs.end() ? it->second.text : ""));
+        }
+        else if (method == "textDocument/definition") {
+            std::string uri = jsonFind(body, "uri");
+            size_t posLine = body.find("\"position\"");
+            int64_t line = jsonFindInt(body, "line", posLine);
+            int64_t character = jsonFindInt(body, "character", posLine);
+            auto it = g_docs.find(uri);
+            sendResponse(id, definitionJson(uri, it != g_docs.end() ? it->second.text : "", (int)line, (int)character));
+        }
+        else if (method == "textDocument/signatureHelp") {
+            std::string uri = jsonFind(body, "uri");
+            size_t posLine = body.find("\"position\"");
+            int64_t line = jsonFindInt(body, "line", posLine);
+            int64_t character = jsonFindInt(body, "character", posLine);
+            auto it = g_docs.find(uri);
+            sendResponse(id, signatureHelpJson(it != g_docs.end() ? it->second.text : "", (int)line, (int)character));
+        }
+        else if (method == "workspace/symbol") {
+            sendResponse(id, workspaceSymbolsJson());
         }
         else if (method == "shutdown") {
             sendResponse(id, "null");
