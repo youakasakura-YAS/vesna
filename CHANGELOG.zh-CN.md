@@ -2,7 +2,15 @@
 
 [English](CHANGELOG.md) | [中文](CHANGELOG.zh-CN.md)
 
-## 1.0.0
+## 1.1.0
+
+### 新增
+- **并发内置**：`#thread("fn"; arg...)`（在新线程中运行函数，全局变量按副本隔离，返回线程 id）、`#thread_join(id)`（等待并取回 `back` 值，线程出错则重新抛出）、`#thread_count()`、`#lock("name")` / `#unlock("name")`（命名互斥锁，用于共享资源保护）；`print` 输出已互斥，未 join 的线程在退出时自动等待
+- **网络内置**（需系统 PATH 中有 curl）：`#http_get(url)`、`#http_post(url; body)`、`#tcp_ping(host; port)`（原生 TCP 探测：Windows 用 Winsock，其他平台用 BSD socket）
+- **二进制内置**：`#bin_read(path)` / `#bin_write(path; bytes)`（字节列表）、`#bin_hex(bytes)` / `#bin_unhex(s)`、`#bin_base64_encode(bytes)` / `#bin_base64_decode(s)` —— 字节即普通整数，可直接套用现有列表操作
+- 新增冒烟测试 `tests/concurrency.ves` / `tests/binary.ves`，golden 由 C++ 生成（冻结的 Python 参考实现不含 1.1 内置）
+
+## 1.0.0## 1.0.0
 
 ### 新增
 - **包管理器（vpm）**：`vesna --pkg` — init / install（`目录` | `zip` | `owner:repo` | registry 包名）/ remove / list / search / registry；包位于 `<VESNA_HOME>\packages\<名称>\<名称>.ves`，通过 `import <名称>` 导入；`install <包名>` 从缓存的 registry 索引解析包；默认 registry 为 [Vesna 包花园](https://youakasakura-YAS.github.io/vesna-pkg/)

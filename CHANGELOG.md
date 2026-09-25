@@ -2,7 +2,15 @@
 
 [English](CHANGELOG.md) | [中文](CHANGELOG.zh-CN.md)
 
-## 1.0.0
+## 1.1.0
+
+### Added
+- **Concurrency builtins**: `#thread("fn"; arg...)` (run a function in a new thread with an isolated copy of global variables; returns a thread id), `#thread_join(id)` (wait and collect the `back` value, rethrowing the thread's error), `#thread_count()`, `#lock("name")` / `#unlock("name")` (named mutexes for shared resources); `print` output is serialized and unjoined threads are joined at exit
+- **Networking builtins** (require `curl` in PATH): `#http_get(url)`, `#http_post(url; body)`, `#tcp_ping(host; port)` (native TCP probe via Winsock on Windows / BSD sockets elsewhere)
+- **Binary builtins**: `#bin_read(path)` / `#bin_write(path; bytes)` (byte lists), `#bin_hex(bytes)` / `#bin_unhex(s)`, `#bin_base64_encode(bytes)` / `#bin_base64_decode(s)` — bytes are plain ints so existing list ops apply
+- New smoke tests `tests/concurrency.ves` / `tests/binary.ves` with C++-generated golden baselines (the frozen Python reference has no 1.1 builtins)
+
+## 1.0.0## 1.0.0
 
 ### Added
 - **Package manager (vpm)**: `vesna --pkg` — init / install (`dir` | `zip` | `owner:repo` | registry package name) / remove / list / search / registry; packages live in `<VESNA_HOME>\packages\<name>\<name>.ves` and are imported via `import <name>`; `install <name>` resolves the package from the cached registry index; default registry is the [Vesna Package Garden](https://youakasakura-YAS.github.io/vesna-pkg/)

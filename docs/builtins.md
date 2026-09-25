@@ -379,6 +379,40 @@ Added in 1.0.0. `#rand`, `#randint`, `#choice`, `#shuffle`, `#now`, `#date`, `#s
 |---|---|
 | `#throw(msg)` | raise an error |
 | `#assert(cond; msg)` | raise if cond is falsy |
+## 1.1 Concurrency / Networking / Binary
+
+### Concurrency
+
+| Function | Description |
+|---|---|
+| `#thread("fn"; arg...)` | run `fn` in a new thread with copies of global variables; returns thread id (int) |
+| `#thread_join(id)` | wait for the thread and return its `back` value; rethrows the thread's error if any |
+| `#thread_count()` | number of currently running (not yet joined) threads |
+| `#lock("name")` | acquire the named mutex (blocking); created on first use |
+| `#unlock("name")` | release the named mutex; error if never locked |
+
+Notes: each thread runs on an independent copy of global state (functions are shared and read-only). Use `#lock`/`#unlock` around shared-file or shared-resource writes; `print` output is serialized. Joined threads are removed from the table; unjoined threads are joined at interpreter exit.
+
+### Networking (requires `curl` in PATH)
+
+| Function | Description |
+|---|---|
+| `#http_get(url)` | GET the URL, return the response body as string |
+| `#http_post(url; body)` | POST form body, return the response body as string |
+| `#tcp_ping(host; port)` | `0` if a TCP connection succeeds, `1` if refused/timeout, `-1` on error |
+
+### Binary
+
+| Function | Description |
+|---|---|
+| `#bin_read(path)` | read a file as a list of bytes (0-255 ints) |
+| `#bin_write(path; bytes)` | write a list of bytes (each 0-255) to a file |
+| `#bin_hex(bytes)` | bytes -> lowercase hex string |
+| `#bin_unhex(s)` | hex string -> bytes list (even length required) |
+| `#bin_base64_encode(bytes)` | bytes -> base64 string |
+| `#bin_base64_decode(s)` | base64 string -> bytes list |
+
+Bytes are plain integers, so existing list ops (`#len`, `#slice`, `#append`, ...) work on binary data directly.
 
 ## Full example
 

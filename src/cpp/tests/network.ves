@@ -1,0 +1,6 @@
+/* 1.1 网络内建 - 冒烟测试（结果依赖网络环境，不进 golden） */
+print("-http_get pkg registry ="; #sub(#http_get("https://youakasakura-YAS.github.io/vesna-pkg/registry.json"); '1'; '80'))
+print("-http_get example.com len ="; #len(#http_get("https://example.com")))
+print("-tcp_ping github 443 ="; #tcp_ping("github.com"; '443'))
+print("-tcp_ping closed port ="; #tcp_ping("127.0.0.1"; '9'))
+print("-http_post echo ="; #sub(#http_post("https://httpbin.org/post"; "a=1"); '1'; '60'))

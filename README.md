@@ -6,7 +6,7 @@
 
 [English](README.md) | [中文](README.zh-CN.md)
 
-![version](https://img.shields.io/badge/version-1.0.0-blue)
+![version](https://img.shields.io/badge/version-1.1.0-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![platform](https://img.shields.io/badge/platform-Windows-x64-lightgrey)
 
@@ -25,7 +25,7 @@
 
 ### 1. Download
 
-Grab `vesna-1.0.0-windows-x64.zip` from [Releases](../../releases) and extract it anywhere.
+Grab `vesna-1.1.0-windows-x64.zip` from [Releases](../../releases) and extract it anywhere.
 
 | File | Description |
 |---|---|
@@ -143,6 +143,15 @@ The `examples\` directory ships a set of command-line tools:
 
 ---
 
+---
+
+## Concurrency / Networking / Binary (1.1)
+
+Second-tier builtins, no syntax changes, snake_case naming, see [docs/builtins](docs/builtins.md):
+
+- **Concurrency**: `#thread("fn"; arg...)` (isolated global copies per thread), `#thread_join(id)`, `#thread_count()`, `#lock("name")` / `#unlock("name")` (named mutexes)
+- **Networking** (requires `curl` in PATH): `#http_get(url)`, `#http_post(url; body)`, `#tcp_ping(host; port)` (native TCP probe)
+- **Binary**: `#bin_read(path)` / `#bin_write(path; bytes)`, `#bin_hex` / `#bin_unhex`, `#bin_base64_encode` / `#bin_base64_decode`
 ## Standard library
 
 Modules live in `C:\Vesna\lib\` (or ship with this repo), used via `import xxx`:

@@ -272,6 +272,8 @@ struct Interp {
     Value binop(const std::string& op, const Value& l, const Value& r);
     Value call(const std::string& name, int64_t nid, const std::vector<std::shared_ptr<Expr>>& args,
                const std::shared_ptr<Env>& env);
+    Value callFuncByValues(const std::string& name, int64_t nid, const std::vector<Value>& argv,
+                           const std::shared_ptr<Env>& env);   // 线程内置用（参数已求值）
     Value into(const std::string& t, const Value& v);
     std::string interpStr(const std::string& tpl, const std::shared_ptr<Env>& env);
     void doImport(const std::string& name, const std::shared_ptr<Env>& env);

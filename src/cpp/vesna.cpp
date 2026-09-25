@@ -1,4 +1,4 @@
-// vesna.cpp — Vesna 1.0.0 C++ 实现：词法 / 预处理 / 解析
+// vesna.cpp — Vesna 1.1.0 C++ 实现：词法 / 预处理 / 解析
 // 从 src/vesna.py 移植，保持语言语义一致
 #include "vesna.hpp"
 
@@ -20,6 +20,8 @@
 #include <regex>
 #include <set>
 #include <sstream>
+#include <thread>
+#include <mutex>
 
 #include "platform.h"
 
@@ -27,7 +29,7 @@ namespace vesna {
 
 static std::string parentDir(const std::string& path);
 static std::string strFloat(double f);
-const std::string VERSION = "1.0.0";
+const std::string VERSION = "1.1.0";
 
 
 // ============================================================
@@ -478,6 +480,10 @@ static const std::set<std::string> BUILTINS = {
     "base64_encode", "base64_decode", "url_encode", "url_decode",
     "each", "all", "any", "find_first", "sort_by",
     "throw", "assert",
+    "thread", "thread_join", "thread_count", "lock", "unlock",
+    "http_get", "http_post", "tcp_ping",
+    "bin_read", "bin_write", "bin_hex", "bin_unhex",
+    "bin_base64_encode", "bin_base64_decode",
 };
 
 static const std::set<std::string> TYPE_KEYWORDS = {"int", "str", "float", "list", "dict", "bool"};
@@ -1820,6 +1826,24 @@ Value Interp::binop(const std::string& op, const Value& l, const Value& r) {
     throw VesnaError("未知运算符 " + op);
 }
 
+// ============================================================
+// 线程表（并发内置）：结果/错误按 id 存取，析构时 join 全部线程
+// ============================================================
+struct ThreadTable {
+    std::mutex m;
+    std::unordered_map<int64_t, std::thread> threads;
+    std::unordered_map<int64_t, Value> results;
+    std::unordered_map<int64_t, std::string> errors;
+    int64_t next_id = 1;
+    ~ThreadTable() {
+        for (auto& kv : threads)
+            if (kv.second.joinable()) kv.second.join();
+    }
+};
+static ThreadTable g_threads;
+static std::mutex g_out_mutex;                 // print 输出锁
+static std::unordered_map<std::string, std::mutex*> g_locks;   // 命名互斥锁
+static std::mutex g_locks_m;
 Value Interp::call(const std::string& name, int64_t nid, const std::vector<std::shared_ptr<Expr>>& args,
                    const std::shared_ptr<Env>& env) {
     if (name == "print") {
@@ -1828,7 +1852,10 @@ Value Interp::call(const std::string& name, int64_t nid, const std::vector<std::
             if (i) line += ' ';
             line += fmt(eval(args[i], env));
         }
-        std::cout << line << '\n';
+        {
+            std::lock_guard<std::mutex> lk(g_out_mutex);
+            std::cout << line << '\n';
+        }
         return mkNone();
     }
     if (name == "input") {
@@ -1864,6 +1891,32 @@ Value Interp::call(const std::string& name, int64_t nid, const std::vector<std::
         return rs.value;
     }
     if (dbg) frames.pop_back();
+    return mkNone();
+}
+
+// 线程内置：参数已求值为 Value，直接按名调用函数（不含 print/input 特判）
+Value Interp::callFuncByValues(const std::string& name, int64_t nid,
+                               const std::vector<Value>& argv,
+                               const std::shared_ptr<Env>& env) {
+    auto fn = env->getFunc(nid);
+    if (!fn) throw VesnaError("线程中找不到函数: " + name);
+    if (argv.size() > fn->params.size())
+        throw VesnaError(name + " 最多 " + std::to_string(fn->params.size()) + " 个参数");
+    auto closure = fn->closure.lock();
+    if (!closure) closure = env;
+    auto local = std::make_shared<Env>(closure);
+    for (size_t i = 0; i < fn->params.size(); ++i) {
+        const auto& pname = fn->params[i].first;
+        const auto& pdefault = fn->params[i].second;
+        if (i < argv.size()) local->set(pname, argv[i]);
+        else if (pdefault) local->set(pname, eval(pdefault, closure));
+        else throw VesnaError(name + " 缺少参数 " + internName(pname));
+    }
+    try {
+        for (auto& s : fn->body) exec(s, local);
+    } catch (ReturnSignal& rs) {
+        return rs.value;
+    }
     return mkNone();
 }
 
@@ -2184,8 +2237,9 @@ static std::string fnv1a64Str(const std::string& s) {
     return std::to_string(h);
 }
 
+
 static std::mt19937_64& rngGen() {
-    static std::mt19937_64 g(std::random_device{}());
+    thread_local static std::mt19937_64 g(std::random_device{}());
     return g;
 }
 
@@ -2283,7 +2337,7 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
                       const std::shared_ptr<Env>& env) {
     auto ev = [&](size_t i) -> Value { return eval(args[i], env); };
     auto argc = [&]() -> size_t { return args.size(); };
-    static const std::unordered_map<std::string, int> g_bi = {{"up",1},{"down",2},{"len",3},{"sub",4},{"split",5},{"join",6},{"find",7},{"replace",8},{"append",9},{"pop",10},{"keys",11},{"values",12},{"type",13},{"args",14},{"fread",15},{"fwrite",16},{"fappend",17},{"fexists",18},{"exit",19},{"f",20},{"trim",21},{"startswith",22},{"endswith",23},{"lines",24},{"repeat",25},{"has_key",26},{"str",27},{"int",28},{"float",29},{"bool",30},{"char_at",31},{"sort",32},{"reverse",33},{"slice",34},{"map",35},{"filter",36},{"reduce",37},{"match",38},{"search",39},{"findall",40},{"gsub",41},{"ls",42},{"glob",43},{"stdin",44},{"ord",45},{"chr",46},{"is_digit",47},{"is_alpha",48},{"is_alnum",49},{"is_space",50},{"lstrip",51},{"rstrip",52},{"title",53},{"capitalize",54},{"count",55},{"rfind",56},{"min",57},{"max",58},{"sum",59},{"abs",60},{"round",61},{"pow",62},{"contains",63},{"mkdir",64},{"copy",65},{"rmdir",66},{"rename",67},{"getenv",68},{"setenv",69},{"cwd",70},{"chdir",71},{"regwrite",72},{"regdelete",73},{"shell",74},{"path_clean",75},{"regenv",146},{"cpdir",147},{"sqrt",76},{"floor",77},{"ceil",78},{"exp",79},{"log",80},{"log10",81},{"sin",82},{"cos",83},{"tan",84},{"sign",85},{"clamp",86},{"rand",87},{"randint",88},{"choice",89},{"shuffle",145},{"hex",90},{"bin",91},{"oct",92},{"pad",93},{"lpad",94},{"rpad",95},{"format",96},{"hash",97},{"range",98},{"first",99},{"last",100},{"take",101},{"drop",102},{"set",103},{"flatten",104},{"zip",105},{"insert",106},{"remove",107},{"index_of",108},{"enumerate",109},{"concat",110},{"get",111},{"items",112},{"pop_key",113},{"is_str",114},{"is_int",115},{"is_float",116},{"is_bool",117},{"is_list",118},{"is_dict",119},{"is_none",120},{"is_group",121},{"now",122},{"date",123},{"sleep",124},{"ticks",125},{"platform",126},{"temp_dir",127},{"fremove",128},{"fmove",129},{"fsize",130},{"is_dir",131},{"is_file",132},{"mkdirs",133},{"base64_encode",134},{"base64_decode",135},{"url_encode",136},{"url_decode",137},{"each",138},{"all",139},{"any",140},{"find_first",141},{"sort_by",142},{"throw",143},{"assert",144}};
+    static const std::unordered_map<std::string, int> g_bi = {{"up",1},{"down",2},{"len",3},{"sub",4},{"split",5},{"join",6},{"find",7},{"replace",8},{"append",9},{"pop",10},{"keys",11},{"values",12},{"type",13},{"args",14},{"fread",15},{"fwrite",16},{"fappend",17},{"fexists",18},{"exit",19},{"f",20},{"trim",21},{"startswith",22},{"endswith",23},{"lines",24},{"repeat",25},{"has_key",26},{"str",27},{"int",28},{"float",29},{"bool",30},{"char_at",31},{"sort",32},{"reverse",33},{"slice",34},{"map",35},{"filter",36},{"reduce",37},{"match",38},{"search",39},{"findall",40},{"gsub",41},{"ls",42},{"glob",43},{"stdin",44},{"ord",45},{"chr",46},{"is_digit",47},{"is_alpha",48},{"is_alnum",49},{"is_space",50},{"lstrip",51},{"rstrip",52},{"title",53},{"capitalize",54},{"count",55},{"rfind",56},{"min",57},{"max",58},{"sum",59},{"abs",60},{"round",61},{"pow",62},{"contains",63},{"mkdir",64},{"copy",65},{"rmdir",66},{"rename",67},{"getenv",68},{"setenv",69},{"cwd",70},{"chdir",71},{"regwrite",72},{"regdelete",73},{"shell",74},{"path_clean",75},{"regenv",146},{"cpdir",147},{"sqrt",76},{"floor",77},{"ceil",78},{"exp",79},{"log",80},{"log10",81},{"sin",82},{"cos",83},{"tan",84},{"sign",85},{"clamp",86},{"rand",87},{"randint",88},{"choice",89},{"shuffle",145},{"hex",90},{"bin",91},{"oct",92},{"pad",93},{"lpad",94},{"rpad",95},{"format",96},{"hash",97},{"range",98},{"first",99},{"last",100},{"take",101},{"drop",102},{"set",103},{"flatten",104},{"zip",105},{"insert",106},{"remove",107},{"index_of",108},{"enumerate",109},{"concat",110},{"get",111},{"items",112},{"pop_key",113},{"is_str",114},{"is_int",115},{"is_float",116},{"is_bool",117},{"is_list",118},{"is_dict",119},{"is_none",120},{"is_group",121},{"now",122},{"date",123},{"sleep",124},{"ticks",125},{"platform",126},{"temp_dir",127},{"fremove",128},{"fmove",129},{"fsize",130},{"is_dir",131},{"is_file",132},{"mkdirs",133},{"base64_encode",134},{"base64_decode",135},{"url_encode",136},{"url_decode",137},{"each",138},{"all",139},{"any",140},{"find_first",141},{"sort_by",142},{"throw",143},{"assert",144},{"thread",148},{"thread_join",149},{"thread_count",150},{"lock",151},{"unlock",152},{"http_get",153},{"http_post",154},{"tcp_ping",155},{"bin_read",156},{"bin_write",157},{"bin_hex",158},{"bin_unhex",159},{"bin_base64_encode",160},{"bin_base64_decode",161}};
     auto it = g_bi.find(name);
     if (it == g_bi.end()) throw VesnaError("未知内置 -" + name);
     switch (it->second) {
@@ -3596,6 +3650,202 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
             throw VesnaError(std::string("-cpdir 异常: ") + e.what());
         }
         return mkNone();
+    }
+
+    // ---- 1.1 并发 ----
+    case 148: {  // -thread(name; arg...)
+        Value nameV = ev(0);
+        if (nameV.t() != Value::T::STR) throw VesnaError("-thread 第一个参数需要函数名字符串");
+        std::vector<Value> argv;
+        for (size_t i = 1; i < argc(); ++i) argv.push_back(ev(i));
+        int64_t nid = internId(nameV.s());
+        if (!env->getFunc(nid)) throw VesnaError("-thread 未找到函数: " + nameV.s());
+        auto gcopy = std::make_shared<Env>();
+        for (auto& kv : g->vars) gcopy->vars.insert(kv);
+        for (auto& kv : g->funcs) gcopy->funcs.insert(kv);
+        gcopy->parent = g->parent;
+        std::vector<std::string> av = this->argv;
+        std::string sd = this->script_dir;
+        int64_t id;
+        {
+            std::lock_guard<std::mutex> lk(g_threads.m);
+            id = g_threads.next_id++;
+            g_threads.errors.erase(id);
+            g_threads.results.erase(id);
+            g_threads.threads[id] = std::thread([id, nameV, nid, argv, gcopy, av, sd]() {
+                Interp sub(av, sd);
+                sub.g = gcopy;
+                try {
+                    Value r = sub.callFuncByValues(nameV.s(), nid, argv, gcopy);
+                    std::lock_guard<std::mutex> lk2(g_threads.m);
+                    g_threads.results[id] = r;
+                } catch (const std::exception& e) {
+                    std::lock_guard<std::mutex> lk2(g_threads.m);
+                    g_threads.errors[id] = std::string(e.what());
+                }
+            });
+        }
+        return mkInt(id);
+    }
+    case 149: {  // -thread_join(id)
+        Value idV = ev(0);
+        if (idV.t() != Value::T::INT) throw VesnaError("-thread_join 需要线程 id");
+        int64_t id = idV.i();
+        std::thread t;
+        {
+            std::lock_guard<std::mutex> lk(g_threads.m);
+            auto it = g_threads.threads.find(id);
+            if (it == g_threads.threads.end())
+                throw VesnaError("-thread_join 线程不存在: " + std::to_string(id));
+            t = std::move(it->second);
+            g_threads.threads.erase(it);
+        }
+        if (t.joinable()) t.join();
+        std::lock_guard<std::mutex> lk2(g_threads.m);
+        auto eit = g_threads.errors.find(id);
+        if (eit != g_threads.errors.end()) {
+            std::string err = eit->second;
+            g_threads.errors.erase(eit);
+            throw VesnaError(err);
+        }
+        Value r = mkNone();
+        auto rit = g_threads.results.find(id);
+        if (rit != g_threads.results.end()) { r = rit->second; g_threads.results.erase(rit); }
+        return r;
+    }
+    case 150: {  // -thread_count()
+        std::lock_guard<std::mutex> lk(g_threads.m);
+        return mkInt((int64_t)g_threads.threads.size());
+    }
+    case 151: {  // -lock(name)
+        Value nV = ev(0);
+        if (nV.t() != Value::T::STR) throw VesnaError("-lock 需要名称字符串");
+        std::mutex* m;
+        {
+            std::lock_guard<std::mutex> lk(g_locks_m);
+            auto it = g_locks.find(nV.s());
+            if (it == g_locks.end()) {
+                m = new std::mutex();
+                g_locks[nV.s()] = m;
+            } else m = it->second;
+        }
+        m->lock();
+        return mkNone();
+    }
+    case 152: {  // -unlock(name)
+        Value nV = ev(0);
+        if (nV.t() != Value::T::STR) throw VesnaError("-unlock 需要名称字符串");
+        std::mutex* m;
+        {
+            std::lock_guard<std::mutex> lk(g_locks_m);
+            auto it = g_locks.find(nV.s());
+            if (it == g_locks.end()) throw VesnaError("-unlock 未锁定: " + nV.s());
+            m = it->second;
+        }
+        m->unlock();
+        return mkNone();
+    }
+
+    // ---- 1.1 网络 ----
+    case 153: {  // -http_get(url)
+        Value u = ev(0);
+        if (u.t() != Value::T::STR) throw VesnaError("-http_get 需要 URL 字符串");
+        return mkStr(httpRequest(u.s(), "", false));
+    }
+    case 154: {  // -http_post(url; body)
+        Value u = ev(0), b = ev(1);
+        if (u.t() != Value::T::STR || b.t() != Value::T::STR)
+            throw VesnaError("-http_post 需要 URL 与 body 字符串");
+        return mkStr(httpRequest(u.s(), b.s(), true));
+    }
+    case 155: {  // -tcp_ping(host; port)
+        Value h = ev(0), p = ev(1);
+        if (h.t() != Value::T::STR || p.t() != Value::T::INT)
+            throw VesnaError("-tcp_ping 需要主机字符串与端口整数");
+        return mkInt(tcpPing(h.s(), (int)p.i()));
+    }
+
+    // ---- 1.1 二进制 ----
+    case 156: {  // -bin_read(path) -> 字节列表
+        Value p = ev(0);
+        if (p.t() != Value::T::STR) throw VesnaError("-bin_read 需要路径字符串");
+        std::ifstream f(std::filesystem::u8path(p.s()), std::ios::binary);
+        if (!f) throw VesnaError("-bin_read 无法打开: " + p.s());
+        std::vector<char> buf((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        Value out = mkList();
+        out.list()->items.reserve(buf.size());
+        for (unsigned char ch : buf) out.list()->items.push_back(mkInt(ch));
+        return out;
+    }
+    case 157: {  // -bin_write(path; bytes)
+        Value p = ev(0), b = ev(1);
+        if (p.t() != Value::T::STR) throw VesnaError("-bin_write 需要路径字符串");
+        if (b.t() != Value::T::LIST && b.t() != Value::T::GROUP)
+            throw VesnaError("-bin_write 需要字节列表");
+        std::ofstream f(std::filesystem::u8path(p.s()), std::ios::binary);
+        if (!f) throw VesnaError("-bin_write 无法写入: " + p.s());
+        const auto& items = b.t() == Value::T::LIST ? b.list()->items : b.group()->items;
+        for (auto& v : items) {
+            if (v.t() != Value::T::INT || v.i() < 0 || v.i() > 255)
+                throw VesnaError("-bin_write 字节须为 0-255 整数");
+            f.put((char)v.i());
+        }
+        return mkNone();
+    }
+    case 158: {  // -bin_hex(bytes) -> 十六进制字符串
+        Value b = ev(0);
+        if (b.t() != Value::T::LIST && b.t() != Value::T::GROUP)
+            throw VesnaError("-bin_hex 需要字节列表");
+        const auto& items = b.t() == Value::T::LIST ? b.list()->items : b.group()->items;
+        std::string out;
+        static const char* hexd = "0123456789abcdef";
+        for (auto& v : items) {
+            int64_t byte = v.t() == Value::T::INT ? v.i() : 0;
+            if (byte < 0 || byte > 255) throw VesnaError("-bin_hex 字节须为 0-255 整数");
+            out += hexd[byte >> 4];
+            out += hexd[byte & 15];
+        }
+        return mkStr(out);
+    }
+    case 159: {  // -bin_unhex(s) -> 字节列表
+        Value s = ev(0);
+        if (s.t() != Value::T::STR) throw VesnaError("-bin_unhex 需要十六进制字符串");
+        const std::string& h = s.s();
+        if (h.size() % 2 != 0) throw VesnaError("-bin_unhex 长度须为偶数");
+        Value out = mkList();
+        auto hexv = [](char c) -> int {
+            if (c >= '0' && c <= '9') return c - '0';
+            if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+            if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+            return -1;
+        };
+        for (size_t i = 0; i < h.size(); i += 2) {
+            int hi = hexv(h[i]), lo = hexv(h[i + 1]);
+            if (hi < 0 || lo < 0) throw VesnaError("-bin_unhex 非法字符");
+            out.list()->items.push_back(mkInt(hi * 16 + lo));
+        }
+        return out;
+    }
+    case 160: {  // -bin_base64_encode(bytes) -> 字符串
+        Value b = ev(0);
+        if (b.t() != Value::T::LIST && b.t() != Value::T::GROUP)
+            throw VesnaError("-bin_base64_encode 需要字节列表");
+        const auto& items = b.t() == Value::T::LIST ? b.list()->items : b.group()->items;
+        std::string raw;
+        for (auto& v : items) {
+            if (v.t() != Value::T::INT || v.i() < 0 || v.i() > 255)
+                throw VesnaError("-bin_base64_encode 字节须为 0-255 整数");
+            raw.push_back((char)v.i());
+        }
+        return mkStr(base64EncodeStr(raw));
+    }
+    case 161: {  // -bin_base64_decode(s) -> 字节列表
+        Value s = ev(0);
+        if (s.t() != Value::T::STR) throw VesnaError("-bin_base64_decode 需要字符串");
+        std::string raw = base64DecodeStr(s.s());
+        Value out = mkList();
+        for (unsigned char ch : raw) out.list()->items.push_back(mkInt(ch));
+        return out;
     }
 
     }

@@ -1,0 +1,12 @@
+/* 1.1 二进制内建 - 冒烟测试（确定性） */
+bytes = #bin_unhex("48656c6c6f")
+print("unhex ="; bytes)
+print("hex ="; #bin_hex(bytes))
+print("b64e ="; #bin_base64_encode(bytes))
+print("b64d ="; #bin_base64_decode("SGVsbG8="))
+#bin_write("tmp_bin.dat"; bytes)
+print("read ="; #bin_read("tmp_bin.dat"))
+empty = #bin_hex(#bin_unhex(""))
+print("empty ="; empty)
+print("hex_upper ="; #bin_unhex("ABCDEF"))
+#fremove("tmp_bin.dat")

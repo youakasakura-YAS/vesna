@@ -1,0 +1,26 @@
+/* 1.1 并发内建 - 冒烟测试（确定性部分） */
+def writer(n)-
+-#lock("shared_file")
+-#fappend("tmp_concurrent.txt"; #join([#str(n); "\n"]; ""))
+-#unlock("shared_file")
+-back('1')
+
+def quick(x)-
+-back(#sum([x; x; x]))
+
+print("tc0 ="; #thread_count())
+id1 = #thread("writer"; '1')
+id2 = #thread("writer"; '2')
+print("tc1 ="; #thread_count())
+print("join1 ="; #thread_join(id1))
+print("join2 ="; #thread_join(id2))
+print("tc2 ="; #thread_count())
+
+idq = #thread("quick"; '4')
+print("quick ="; #thread_join(idq))
+print("tc3 ="; #thread_count())
+
+lines = #lines(#fread("tmp_concurrent.txt"))
+#sort(lines)
+print("file ="; lines)
+#fremove("tmp_concurrent.txt")
