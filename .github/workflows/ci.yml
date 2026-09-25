@@ -26,7 +26,7 @@ jobs:
         with:
           msystem: MINGW64
           update: true
-          install: mingw-w64-x86_64-gcc diffutils
+          install: mingw-w64-x86_64-gcc diffutils mingw-w64-x86_64-python
 
       - name: Build C++ interpreter
         shell: msys2 {0}
@@ -45,6 +45,7 @@ jobs:
         shell: msys2 {0}
         run: |
           cd src/cpp
+          export VESNA_HOME="$(pwd)/../.."
           ./vesna_cpp.exe tests/regression.ves > cpp.out 2>&1 || true
           python ../../vesna-py/src/vesna.py tests/regression.ves > py.out 2>&1 || true
           diff cpp.out py.out && echo "REGRESSION MATCH"
@@ -53,6 +54,7 @@ jobs:
         shell: msys2 {0}
         run: |
           cd src/cpp
+          export VESNA_HOME="$(pwd)/../.."
           for f in ../../examples/*.ves; do
             ./vesna_cpp.exe "$f" > cpp.out 2>&1 || true
             python ../../vesna-py/src/vesna.py "$f" > py.out 2>&1 || true
