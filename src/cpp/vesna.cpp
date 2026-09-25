@@ -1968,27 +1968,41 @@ std::string Interp::interpStr(const std::string& tpl, const std::shared_ptr<Env>
 
 void Interp::doImport(const std::string& name, const std::shared_ptr<Env>& env) {
     std::string n = trimStr(name);
+    auto loadOne = [&](const std::string& p) -> bool {
+        if (!fileExists(p)) return false;
+        std::string src = readFileUtf8(p);
+        Parser sub_parser(preprocess(src), p);
+        auto program = sub_parser.parse();
+        if (!sub_parser.errors.empty()) {
+            auto [line, msg] = sub_parser.errors[0];
+            throw VesnaError(n + ".ves: " + msg, line);
+        }
+        auto sub = std::make_shared<Interp>(argv, parentDir(p));
+        sub->g->parent = env;  // 包内函数可沿 parent 链查找导入方脚本的函数/变量（#call 动态调用）
+        sub->run(program);
+        for (auto& [k, v] : sub->g->vars) env->set(k, v);
+        for (auto& [k, fn] : sub->g->funcs) env->setFunc(k, fn);
+        kept_.push_back(sub->g);  // 保活被导入函数闭包引用的环境
+        return true;
+    };
     std::vector<std::string> paths = {
         script_dir + "\\" + n + ".ves",
         script_dir + "\\lib\\" + n + ".ves",
         findVesnaHome() + "\\lib\\" + n + ".ves",
         findVesnaHome() + "\\packages\\" + n + "\\" + n + ".ves",
     };
-    for (const auto& p : paths) {
-        if (fileExists(p)) {
-            std::string src = readFileUtf8(p);
-            Parser sub_parser(preprocess(src), p);
-            auto program = sub_parser.parse();
-            if (!sub_parser.errors.empty()) {
-                auto [line, msg] = sub_parser.errors[0];
-                throw VesnaError(n + ".ves: " + msg, line);
+    for (const auto& p : paths) if (loadOne(p)) return;
+    // vpm 包：读取 vesna-pkg.json 的 entry 字段（entry 可与包名不同，如 hello_vesna -> hello.ves）
+    std::string pkg_meta = findVesnaHome() + "\\packages\\" + n + "\\vesna-pkg.json";
+    if (fileExists(pkg_meta)) {
+        std::string msrc = readFileUtf8(pkg_meta);
+        std::smatch m;
+        static const std::regex entry_re("\"entry\"[ \t]*:[ \t]*\"([^\"]+)\"");
+        if (std::regex_search(msrc, m, entry_re)) {
+            std::string entry = m[1].str();
+            if (entry.find("..") == std::string::npos && entry.find(':') == std::string::npos) {
+                if (loadOne(findVesnaHome() + "\\packages\\" + n + "\\" + entry)) return;
             }
-            auto sub = std::make_shared<Interp>(argv, parentDir(p));
-            sub->run(program);
-            for (auto& [k, v] : sub->g->vars) env->set(k, v);
-            for (auto& [k, fn] : sub->g->funcs) env->setFunc(k, fn);
-            kept_.push_back(sub->g);  // 保活被导入函数闭包引用的环境
-            return;
         }
     }
     throw VesnaError("找不到模块: " + n);
@@ -2530,7 +2544,7 @@ static std::pair<int, std::string> procRun(const std::string& cmd) {
 const std::vector<std::pair<std::string, int>> g_builtinNames = {
     {"up",1},{"down",2},{"len",3},{"sub",4},{"split",5},{"join",6},{"find",7},{"replace",8},{"append",9},{"pop",10},{"keys",11},{"values",12},{"type",13},{"args",14},{"fread",15},{"fwrite",16},{"fappend",17},{"fexists",18},{"exit",19},{"f",20},{"trim",21},{"startswith",22},{"endswith",23},{"lines",24},{"repeat",25},{"has_key",26},{"str",27},{"int",28},{"float",29},{"bool",30},{"char_at",31},{"sort",32},{"reverse",33},{"slice",34},{"map",35},{"filter",36},{"reduce",37},{"match",38},{"search",39},{"findall",40},{"gsub",41},{"ls",42},{"glob",43},{"stdin",44},{"ord",45},{"chr",46},{"is_digit",47},{"is_alpha",48},{"is_alnum",49},{"is_space",50},{"lstrip",51},{"rstrip",52},{"title",53},{"capitalize",54},{"count",55},{"rfind",56},{"min",57},{"max",58},{"sum",59},{"abs",60},{"round",61},{"pow",62},{"contains",63},{"mkdir",64},{"copy",65},{"rmdir",66},{"rename",67},{"getenv",68},{"setenv",69},{"cwd",70},{"chdir",71},{"regwrite",72},{"regdelete",73},{"shell",74},{"path_clean",75},{"regenv",146},{"cpdir",147},{"sqrt",76},{"floor",77},{"ceil",78},{"exp",79},{"log",80},{"log10",81},{"sin",82},{"cos",83},{"tan",84},{"sign",85},{"clamp",86},{"rand",87},{"randint",88},{"choice",89},{"shuffle",145},{"hex",90},{"bin",91},{"oct",92},{"pad",93},{"lpad",94},{"rpad",95},{"format",96},{"hash",97},{"range",98},{"first",99},{"last",100},{"take",101},{"drop",102},{"set",103},{"flatten",104},{"zip",105},{"insert",106},{"remove",107},{"index_of",108},{"enumerate",109},{"concat",110},{"get",111},{"items",112},{"pop_key",113},{"is_str",114},{"is_int",115},{"is_float",116},{"is_bool",117},{"is_list",118},{"is_dict",119},{"is_none",120},{"is_group",121},{"now",122},{"date",123},{"sleep",124},{"ticks",125},{"platform",126},{"temp_dir",127},{"fremove",128},{"fmove",129},{"fsize",130},{"is_dir",131},{"is_file",132},{"mkdirs",133},{"base64_encode",134},{"base64_decode",135},{"url_encode",136},{"url_decode",137},{"each",138},{"all",139},{"any",140},{"find_first",141},{"sort_by",142},{"throw",143},{"assert",144},{"thread",148},{"thread_join",149},{"thread_count",150},{"lock",151},{"unlock",152},{"http_get",153},{"http_post",154},{"tcp_ping",155},{"bin_read",156},{"bin_write",157},{"bin_hex",158},{"bin_unhex",159},{"bin_base64_encode",160},{"bin_base64_decode",161},{"json_encode",162},{"json_decode",163},{"re_groups",164},{"sha256",165},{"aes_encrypt",166},{"aes_decrypt",167},{"proc_run",168},{"ffi_call",169},
     {"csv_parse",170},{"csv_build",171},{"ini_read",172},{"ini_write",173},
-    {"xml_parse",174},{"ffi_call_s",175}
+    {"xml_parse",174},{"ffi_call_s",175},{"call",176}
 };
 
 
@@ -4456,6 +4470,13 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
             case 6: r = ((const char*(*)(int64_t,int64_t,int64_t,int64_t,int64_t,int64_t))fn)(p[0], p[1], p[2], p[3], p[4], p[5]); break;
         }
         return mkStr(r ? std::string(r) : "");
+    }
+    case 176: {  // -call(fname; arg1; ...) 按名字调用函数（动态调用，fname 为函数名字符串）
+        Value fnV = ev(0);
+        if (fnV.t() != Value::T::STR)
+            throw VesnaError("-call 第一个参数需要函数名字符串");
+        std::vector<std::shared_ptr<Expr>> rest(args.begin() + 1, args.end());
+        return call(fnV.s(), internId(fnV.s()), rest, env);
     }
 
 

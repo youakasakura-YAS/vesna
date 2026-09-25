@@ -23,6 +23,7 @@ def pkg_help()-
 -print("  list                    列出已安装包"),
 -print("  search <关键词>         搜索 registry 索引"),
 -print("  registry <URL>          更新 registry 索引缓存"),
+-print("  publish                打包并生成 registry 条目（zip + sha256）"),
 
 def read_json(path)-
 -if not #fexists(path)-
@@ -350,7 +351,65 @@ if cmd == "search"-
 -print("找到 " + #str(found) + " 个"),
 -#exit('0'),
 
+
+
+if cmd == "publish"-
+-if not #fexists("vesna-pkg.json")-
+--print("错误: 当前目录不是包（缺少 vesna-pkg.json），先运行 init"),
+--#exit('1'),
+-meta = read_json("vesna-pkg.json"),
+-if not validate_meta(meta; "")-
+--#exit('1'),
+-name = meta["name"],
+-ver = meta["version"],
+-entry = "",
+-if #has_key(meta; "entry")-
+--entry = meta["entry"],
+-print("发布 " + name + " " + ver + "（entry=" + entry + "）"),
+-/* 打包临时目录 */
+-tmp = home + "\\packages\\_pub",
+-if #fexists(tmp)-
+--#rmdir(tmp),
+-#mkdirs(tmp),
+-#copy(entry; tmp + "\\" + entry),
+-#copy("vesna-pkg.json"; tmp + "\\vesna-pkg.json"),
+-zip_name = name + "-" + ver + ".zip",
+-zip_path = #cwd() + "\\" + zip_name,
+-plat = #platform(),
+-if #find(plat; "windows") != '0'-
+--#shell("powershell -NoProfile -Command \"Compress-Archive -Path '" + tmp + "\\*' -DestinationPath '" + zip_path + "' -Force\""),
+-else-
+--#shell("zip -rj \"" + zip_path + "\" \"" + tmp + "\""),
+-if not #fexists(zip_path)-
+--print("错误: 打包失败"),
+--#exit('1'),
+-checksum = #sha256(#fread(zip_path)),
+-print("已生成 " + zip_name + "（sha256: " + checksum + "）"),
+-/* registry 条目 */
+-desc = "",
+-if #has_key(meta; "description")-
+--desc = meta["description"],
+-desc = #replace(#replace(desc; "\n"; " "); "\""; "'"),
+-lic = "MIT",
+-if #has_key(meta; "license")-
+--lic = meta["license"],
+-deps_json = "{}",
+-if #has_key(meta; "dependencies")-
+--deps_json = #json_encode(meta["dependencies"]),
+-entry_json = "{\n  \"name\": \"" + name + "\",\n  \"version\": \"" + ver + "\",\n  \"description\": \"" + desc + "\",\n  \"license\": \"" + lic + "\",\n  \"url\": \"https://youakasakura-YAS.github.io/vesna-pkg/packages/" + name + "/" + zip_name + "\",\n  \"checksum\": \"" + checksum + "\",\n  \"dependencies\": " + deps_json + "\n}",
+-#fwrite("registry-entry.json"; entry_json),
+-print("registry 条目已写入 registry-entry.json"),
+-if #fexists("registry.json")-
+--reg = read_json("registry.json"),
+--if reg != none and #type(reg) == "list"-
+---#append(reg; #json_decode(entry_json)),
+---#fwrite("registry.json"; #json_encode(reg)),
+---print("已更新本地 registry.json（" + #str(#len(reg)) + " 个条目）"),
+-print("提示: 将 " + zip_name + " 放到 packages/" + name + "/，并把 registry-entry.json 内容并入 registry.json 后推送"),
+-#exit('0'),
+
 if cmd == "registry"-
+
 -if #len(args) < '2'-
 --url = default_reg,
 --print("使用默认 registry: " + default_reg),
