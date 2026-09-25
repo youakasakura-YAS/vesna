@@ -9,24 +9,18 @@ on:
 
 jobs:
   build-cpp:
-    name: Build C++ + regression vs Python
+    name: Build C++ + golden regression
     runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-
-      - name: Checkout Python reference (vesna-py)
-        uses: actions/checkout@v5
-        with:
-          repository: youakasakura-YAS/vesna-py
-          path: vesna-py
 
       - name: Setup MSYS2 (MinGW g++)
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
           update: true
-          install: mingw-w64-x86_64-gcc diffutils mingw-w64-x86_64-python
+          install: mingw-w64-x86_64-gcc diffutils
 
       - name: Build C++ interpreter
         shell: msys2 {0}
@@ -41,24 +35,47 @@ jobs:
           ./vesna_cpp.exe --version
           echo 'print("hi"),' | ./vesna_cpp.exe
 
-      - name: Regression (C++ vs Python reference, must match line-by-line)
+      # golden 基准由 Python 参考实现 0.3.0 生成（tests/golden/），
+      # 生成命令见 tests/golden/README.md；C++ 输出必须与之逐行一致
+      - name: Regression vs golden
         shell: msys2 {0}
         run: |
           cd src/cpp
           export VESNA_HOME="$(pwd)/../.."
-          ./vesna_cpp.exe tests/regression.ves > cpp.out 2>&1 || true
-          python ../../vesna-py/src/vesna.py tests/regression.ves > py.out 2>&1 || true
-          diff cpp.out py.out && echo "REGRESSION MATCH"
+          ./vesna_cpp.exe tests/regression.ves > cpp.out 2>&1
+          diff cpp.out tests/golden/regression.out && echo "REGRESSION MATCH"
 
-      - name: Example scripts (C++ vs Python reference)
+      - name: FS test vs golden
         shell: msys2 {0}
         run: |
           cd src/cpp
           export VESNA_HOME="$(pwd)/../.."
-          for f in ../../examples/*.ves; do
-            ./vesna_cpp.exe "$f" > cpp.out 2>&1 || true
-            python ../../vesna-py/src/vesna.py "$f" > py.out 2>&1 || true
-            diff cpp.out py.out || exit 1
+          ./vesna_cpp.exe tests/fs_test.ves > cpp.out 2>&1
+          diff cpp.out tests/golden/fs_test.out && echo "FS MATCH"
+
+      - name: Example scripts vs golden
+        shell: msys2 {0}
+        run: |
+          cd src/cpp
+          export VESNA_HOME="$(pwd)/../.."
+          for name in csv2json cut extract grep head logstat replace sed sort stat tail uniq wc; do
+            case "$name" in
+              csv2json) args="../../examples/sample.csv" ;;
+              cut)      args=", 2 ../../examples/sample.csv" ;;
+              extract)  args="../../examples/sample.txt" ;;
+              grep)     args="ERROR ../../examples/sample.txt" ;;
+              head)     args="3 ../../examples/sample.txt" ;;
+              logstat)  args="../../examples/sample.txt" ;;
+              replace)  args="a X ../../examples/sample.txt" ;;
+              sed)      args="\d+ N ../../examples/sample.txt" ;;
+              sort)     args="../../examples/sample.txt" ;;
+              stat)     args="../../examples/sample.txt" ;;
+              tail)     args="3 ../../examples/sample.txt" ;;
+              uniq)     args="../../examples/sample.txt" ;;
+              wc)       args="../../examples/sample.txt" ;;
+            esac
+            ./vesna_cpp.exe "../../examples/$name.ves" $args > cpp.out 2>&1
+            diff cpp.out "tests/golden/examples/$name.out" || exit 1
           done
           echo "EXAMPLES MATCH"
 

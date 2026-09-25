@@ -1,0 +1,5 @@
+﻿N-N-N N:N:N ERROR failed to connect
+N-N-N N:N:N INFO  user login
+N-N-N N:N:N ERROR timeout
+N-N-N N:N:N WARN  slow query
+N-N-N N:N:N ERROR disk full

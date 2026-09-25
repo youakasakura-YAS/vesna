@@ -1,0 +1,11 @@
+﻿FS1: 读回=hello vesna
+line2
+FS2: 追加后=3行
+FS3: 中文读回=你好世界
+FS4: 拷贝存在=true
+FS5: 目录拷贝=true/true
+FS6: glob=2
+FS6: ls=4
+FS7: rename=true/false
+FS8: 删除后=false
+FS_DONE
