@@ -1,7 +1,0 @@
-{
-  "name": "mypkg",
-  "version": "1.0.0",
-  "description": "",
-  "entry": "mypkg.ves",
-  "dependencies": {}
-}
