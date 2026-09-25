@@ -1,4 +1,4 @@
-﻿csv_parse rows= '3'
+csv_parse rows= '3'
 row0= a|b|c
 row1= 1|x,y|3
 row2= he said "hi"|z|w

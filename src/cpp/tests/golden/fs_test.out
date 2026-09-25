@@ -1,4 +1,4 @@
-﻿FS1: 读回=hello vesna
+FS1: 读回=hello vesna
 line2
 FS2: 追加后=3行
 FS3: 中文读回=你好世界
