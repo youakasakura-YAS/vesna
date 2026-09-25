@@ -18,6 +18,10 @@
   - Functional: `#each` `#all` `#any` `#find_first` `#sort_by`
   - Exceptions: `#throw` `#assert`
 - CI adds a golden comparison step for the 0.4 builtin smoke test (`tests/smoke04.ves`)
+- New builtin `#regenv(name)`: read a user environment variable (`HKCU\Environment`)
+- `vesna --uninstall`: removes the install directory, cleans `VESNA_HOME` / `PATH`, and deletes the `.ves` / `VesnaScript` registry association
+- `--install` now also writes the `OpenWithProgids` entry (previously only in `install-assoc.reg`), fully integrating the association into the installer
+- `#regdelete` now deletes the whole key tree recursively
 
 ### Changed
 - Version bumped to 0.4.0

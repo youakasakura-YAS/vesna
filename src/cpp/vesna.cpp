@@ -482,7 +482,7 @@ static const std::set<std::string> BUILTINS = {
     "contains",
     "mkdir", "copy", "rmdir", "rename",
     "getenv", "setenv", "cwd", "chdir",
-    "regwrite", "regdelete", "shell", "path_clean",
+    "regwrite", "regdelete", "shell", "path_clean", "regenv",
     /* ---- 0.4 閫氱敤缂栫▼璇█鎵╁厖 ---- */
     "sqrt", "floor", "ceil", "exp", "log", "log10",
     "sin", "cos", "tan", "sign", "clamp",
@@ -2199,7 +2199,7 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
                       const std::shared_ptr<Env>& env) {
     auto ev = [&](size_t i) -> Value { return eval(args[i], env); };
     auto argc = [&]() -> size_t { return args.size(); };
-    static const std::unordered_map<std::string, int> g_bi = {{"up",1},{"down",2},{"len",3},{"sub",4},{"split",5},{"join",6},{"find",7},{"replace",8},{"append",9},{"pop",10},{"keys",11},{"values",12},{"type",13},{"args",14},{"fread",15},{"fwrite",16},{"fappend",17},{"fexists",18},{"exit",19},{"f",20},{"trim",21},{"startswith",22},{"endswith",23},{"lines",24},{"repeat",25},{"has_key",26},{"str",27},{"int",28},{"float",29},{"bool",30},{"char_at",31},{"sort",32},{"reverse",33},{"slice",34},{"map",35},{"filter",36},{"reduce",37},{"match",38},{"search",39},{"findall",40},{"gsub",41},{"ls",42},{"glob",43},{"stdin",44},{"ord",45},{"chr",46},{"is_digit",47},{"is_alpha",48},{"is_alnum",49},{"is_space",50},{"lstrip",51},{"rstrip",52},{"title",53},{"capitalize",54},{"count",55},{"rfind",56},{"min",57},{"max",58},{"sum",59},{"abs",60},{"round",61},{"pow",62},{"contains",63},{"mkdir",64},{"copy",65},{"rmdir",66},{"rename",67},{"getenv",68},{"setenv",69},{"cwd",70},{"chdir",71},{"regwrite",72},{"regdelete",73},{"shell",74},{"path_clean",75},{"sqrt",76},{"floor",77},{"ceil",78},{"exp",79},{"log",80},{"log10",81},{"sin",82},{"cos",83},{"tan",84},{"sign",85},{"clamp",86},{"rand",87},{"randint",88},{"choice",89},{"shuffle",145},{"hex",90},{"bin",91},{"oct",92},{"pad",93},{"lpad",94},{"rpad",95},{"format",96},{"hash",97},{"range",98},{"first",99},{"last",100},{"take",101},{"drop",102},{"set",103},{"flatten",104},{"zip",105},{"insert",106},{"remove",107},{"index_of",108},{"enumerate",109},{"concat",110},{"get",111},{"items",112},{"pop_key",113},{"is_str",114},{"is_int",115},{"is_float",116},{"is_bool",117},{"is_list",118},{"is_dict",119},{"is_none",120},{"is_group",121},{"now",122},{"date",123},{"sleep",124},{"ticks",125},{"platform",126},{"temp_dir",127},{"fremove",128},{"fmove",129},{"fsize",130},{"is_dir",131},{"is_file",132},{"mkdirs",133},{"base64_encode",134},{"base64_decode",135},{"url_encode",136},{"url_decode",137},{"each",138},{"all",139},{"any",140},{"find_first",141},{"sort_by",142},{"throw",143},{"assert",144}};
+    static const std::unordered_map<std::string, int> g_bi = {{"up",1},{"down",2},{"len",3},{"sub",4},{"split",5},{"join",6},{"find",7},{"replace",8},{"append",9},{"pop",10},{"keys",11},{"values",12},{"type",13},{"args",14},{"fread",15},{"fwrite",16},{"fappend",17},{"fexists",18},{"exit",19},{"f",20},{"trim",21},{"startswith",22},{"endswith",23},{"lines",24},{"repeat",25},{"has_key",26},{"str",27},{"int",28},{"float",29},{"bool",30},{"char_at",31},{"sort",32},{"reverse",33},{"slice",34},{"map",35},{"filter",36},{"reduce",37},{"match",38},{"search",39},{"findall",40},{"gsub",41},{"ls",42},{"glob",43},{"stdin",44},{"ord",45},{"chr",46},{"is_digit",47},{"is_alpha",48},{"is_alnum",49},{"is_space",50},{"lstrip",51},{"rstrip",52},{"title",53},{"capitalize",54},{"count",55},{"rfind",56},{"min",57},{"max",58},{"sum",59},{"abs",60},{"round",61},{"pow",62},{"contains",63},{"mkdir",64},{"copy",65},{"rmdir",66},{"rename",67},{"getenv",68},{"setenv",69},{"cwd",70},{"chdir",71},{"regwrite",72},{"regdelete",73},{"shell",74},{"path_clean",75},{"regenv",146},{"sqrt",76},{"floor",77},{"ceil",78},{"exp",79},{"log",80},{"log10",81},{"sin",82},{"cos",83},{"tan",84},{"sign",85},{"clamp",86},{"rand",87},{"randint",88},{"choice",89},{"shuffle",145},{"hex",90},{"bin",91},{"oct",92},{"pad",93},{"lpad",94},{"rpad",95},{"format",96},{"hash",97},{"range",98},{"first",99},{"last",100},{"take",101},{"drop",102},{"set",103},{"flatten",104},{"zip",105},{"insert",106},{"remove",107},{"index_of",108},{"enumerate",109},{"concat",110},{"get",111},{"items",112},{"pop_key",113},{"is_str",114},{"is_int",115},{"is_float",116},{"is_bool",117},{"is_list",118},{"is_dict",119},{"is_none",120},{"is_group",121},{"now",122},{"date",123},{"sleep",124},{"ticks",125},{"platform",126},{"temp_dir",127},{"fremove",128},{"fmove",129},{"fsize",130},{"is_dir",131},{"is_file",132},{"mkdirs",133},{"base64_encode",134},{"base64_decode",135},{"url_encode",136},{"url_decode",137},{"each",138},{"all",139},{"any",140},{"find_first",141},{"sort_by",142},{"throw",143},{"assert",144}};
     auto it = g_bi.find(name);
     if (it == g_bi.end()) throw VesnaError("未知内置 -" + name);
     switch (it->second) {
@@ -2881,10 +2881,28 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
         HKEY hroot = (rootV.s() == "HKLM") ? HKEY_LOCAL_MACHINE
                    : (rootV.s() == "HKCU") ? HKEY_CURRENT_USER : nullptr;
         if (!hroot) throw VesnaError("-regdelete 未知根: " + rootV.s());
-        LONG r = RegDeleteKeyW(hroot, utf8ToWide(pathV.s()).c_str());
+        LONG r = RegDeleteTreeW(hroot, utf8ToWide(pathV.s()).c_str());
         if (r != ERROR_SUCCESS && r != ERROR_FILE_NOT_FOUND)
             throw VesnaError("-regdelete 失败");
         return mkNone();
+    }
+    case 146: {  // -regenv(name): 读用户环境变量（HKCU\Environment），无则 ""
+        Value k = ev(0);
+        if (k.t() != Value::T::STR) throw VesnaError("-regenv 需要字符串");
+        HKEY hk = nullptr;
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Environment", 0,
+                          KEY_QUERY_VALUE, &hk) != ERROR_SUCCESS)
+            return mkStr("");
+        std::wstring wk = utf8ToWide(k.s());
+        wchar_t buf[32768];
+        DWORD size = sizeof(buf);
+        LONG r = RegQueryValueExW(hk, wk.c_str(), nullptr, nullptr,
+                                  (LPBYTE)buf, &size);
+        RegCloseKey(hk);
+        if (r != ERROR_SUCCESS) return mkStr("");
+        size_t chars = size / sizeof(wchar_t);
+        if (chars > 0 && buf[chars - 1] == L'\0') chars -= 1;
+        return mkStr(wideToUtf8(std::wstring(buf, chars)));
     }
     case 74: {
         Value cmd = ev(0);

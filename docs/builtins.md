@@ -174,6 +174,7 @@ d = {"a": '1'; "b": '2'},
 | `#fexists(path)` | file exists? |
 | `#ls(dir)` | list directory |
 | `#glob(pat)` | glob match |
+| `#rmdir(path)` | delete directory recursively (missing is fine) |
 
 ```text
 #fread("data.txt"),
@@ -193,6 +194,14 @@ d = {"a": '1'; "b": '2'},
 | `#args()` | command-line args |
 | `#stdin()` | read standard input |
 | `#exit(code)` | exit program |
+| `#setenv(name; value)` | set user environment variable (HKCU\Environment) |
+| `#getenv(name)` | read process environment variable |
+| `#regenv(name)` | read user environment variable (HKCU\Environment) |
+| `#regwrite(root; path; name; value)` | write registry value (root: HKLM / HKCU) |
+| `#regdelete(root; path)` | delete registry key tree (recursive) |
+| `#shell(cmd)` | run shell command |
+| `#path_clean(p)` | normalize path |
+| `#cwd()` | current working directory |
 
 ```text
 args = #args(),

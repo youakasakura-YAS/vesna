@@ -72,7 +72,7 @@ if #fexists(src + "\\LICENSE")-
 print("[4/6] 设置环境变量..."),
 #setenv("VESNA_HOME"; target),
 print("  VESNA_HOME = " + target),
-old_path = #getenv("PATH"),
+old_path = #regenv("PATH"),
 bin_path = target + "\\bin",
 if #find(old_path; bin_path) == '0'-
 -#setenv("PATH"; old_path + ";" + bin_path),
@@ -84,12 +84,60 @@ print("[5/6] 注册文件关联..."),
 #regwrite("HKCU"; "Software\\Classes\\.ves\\ShellNew"; "NullFile"; ""),
 #regwrite("HKCU"; "Software\\Classes\\VesnaScript"; ""; "Vesna 脚本"),
 #regwrite("HKCU"; "Software\\Classes\\VesnaScript\\DefaultIcon"; ""; target + "\\vesna.ico"),
+#regwrite("HKCU"; "Software\\Classes\\VesnaScript\\OpenWithProgids"; ""; ""),
 #regwrite("HKCU"; "Software\\Classes\\VesnaScript\\shell\\run"; ""; "用 Vesna 运行"),
 #regwrite("HKCU"; "Software\\Classes\\VesnaScript\\shell\\run\\command"; ""; "\"" + target + "\\bin\\vesna.exe\" \"%1\""),
 print("  OK"),
 print("[6/6] 安装完成"),
 print(""),
 print("请重开 cmd 后输入 vesna 测试。"),
+)VES";
+
+// Vesna 内置卸载程序（C++ 版）：删注册表关联 + 清环境变量 + 删安装目录
+static const char* UNINSTALL_SCRIPT = R"VES(
+/* Vesna 内置卸载程序 */
+
+target = #getenv("VESNA_HOME"),
+if target == ""-
+-target = "C:\\Vesna",
+args = #args(),
+if #len(args) >= '1'-
+-target = #path_clean(args['1']),
+
+print("=== Vesna 卸载程序 ==="),
+print("目标目录: " + target),
+print(""),
+
+print("[1/4] 删除文件关联..."),
+#regdelete("HKCU"; "Software\\Classes\\VesnaScript"),
+#regdelete("HKCU"; "Software\\Classes\\.ves"),
+print("  OK"),
+
+print("[2/4] 清理环境变量..."),
+#shell("reg delete \"HKCU\\Environment\" /v VESNA_HOME /f"),
+bin_path = target + "\\bin",
+old_path = #regenv("PATH"),
+new_path = #replace(old_path; ";" + bin_path; ""),
+new_path = #replace(new_path; bin_path + ";"; ""),
+new_path = #replace(new_path; bin_path; ""),
+if new_path != old_path-
+-#setenv("PATH"; new_path),
+-print("  PATH 已移除 " + bin_path),
+else-
+-print("  PATH 未包含 " + bin_path),
+print("  OK"),
+
+print("[3/4] 删除安装目录..."),
+if #fexists(target)-
+-#rmdir(target),
+-print("  已删除 " + target),
+else-
+-print("  目录不存在，跳过"),
+print("  OK"),
+
+print("[4/4] 卸载完成"),
+print(""),
+print("请重开 cmd 后生效。"),
 )VES";
 
 int mainCli(int argc, char** argv) {
@@ -118,6 +166,19 @@ int mainCli(int argc, char** argv) {
         }
     }
 
+    if (arg == "--uninstall") {
+        std::vector<std::string> args;
+        for (int i = 2; i < argc; ++i) args.emplace_back(argv[i]);
+        try {
+            int code = runSource(UNINSTALL_SCRIPT, args, ".",
+                                 "<uninstall>", true);
+            return code ? code : 0;
+        } catch (VesnaError& e) {
+            std::cerr << "卸载失败: " << e.str() << std::endl;
+            return 1;
+        }
+    }
+
     if (arg == "--version") {
         std::cout << "Vesna " << VERSION << std::endl;
         return 0;
@@ -128,6 +189,7 @@ int mainCli(int argc, char** argv) {
                   << "  vesna <脚本.ves> [参数...]   运行脚本\n"
                   << "  vesna                        进入 REPL\n"
                   << "  vesna --install              安装 Vesna\n"
+                  << "  vesna --uninstall            卸载 Vesna（删目录+环境变量+注册表）\n"
                   << "  vesna --version              显示版本\n"
                   << "  vesna --help                 显示帮助\n";
         return 0;

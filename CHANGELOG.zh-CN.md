@@ -18,6 +18,10 @@
   - 函数式：`#each` `#all` `#any` `#find_first` `#sort_by`
   - 异常：`#throw` `#assert`
 - CI 增加 0.4 内置冒烟测试 golden 对照（`tests/smoke04.ves`）
+- 新增内置 `#regenv(name)`：读取用户环境变量（`HKCU\Environment`）
+- `vesna --uninstall`：删除安装目录、清理 `VESNA_HOME`/`PATH`、删除 `.ves`/`VesnaScript` 文件关联
+- `--install` 补写 `OpenWithProgids` 项（此前仅在 `install-assoc.reg` 中），文件关联完全集成进安装程序
+- `#regdelete` 改为递归删除整个键树
 
 ### 变更
 - 版本号统一为 0.4.0

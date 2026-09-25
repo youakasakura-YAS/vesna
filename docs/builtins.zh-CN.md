@@ -174,6 +174,7 @@ d = {"a": '1'; "b": '2'},
 | `#fexists(path)` | 文件是否存在 |
 | `#ls(dir)` | 列目录 |
 | `#glob(pat)` | 通配匹配 |
+| `#rmdir(path)` | 递归删除目录（不存在时忽略） |
 
 ```text
 #fread("data.txt"),
@@ -193,6 +194,14 @@ d = {"a": '1'; "b": '2'},
 | `#args()` | 命令行参数列表 |
 | `#stdin()` | 读标准输入 |
 | `#exit(code)` | 退出程序 |
+| `#setenv(name; value)` | 设置用户环境变量（HKCU\Environment） |
+| `#getenv(name)` | 读取进程环境变量 |
+| `#regenv(name)` | 读取用户环境变量（HKCU\Environment） |
+| `#regwrite(root; path; name; value)` | 写注册表值（root: HKLM / HKCU） |
+| `#regdelete(root; path)` | 删除注册表键树（递归） |
+| `#shell(cmd)` | 运行 shell 命令 |
+| `#path_clean(p)` | 规范化路径 |
+| `#cwd()` | 当前工作目录 |
 
 ```text
 args = #args(),
