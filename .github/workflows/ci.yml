@@ -15,6 +15,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Checkout Python reference (vesna-py)
+        uses: actions/checkout@v4
+        with:
+          repository: youakasakura-YAS/vesna-py
+          path: vesna-py
+
       - name: Setup MSYS2 (MinGW g++)
         uses: msys2/setup-msys2@v2
         with:
@@ -35,21 +41,21 @@ jobs:
           ./vesna_cpp.exe --version
           echo 'print("hi"),' | ./vesna_cpp.exe
 
-      - name: Regression (C++ vs Python, must match line-by-line)
+      - name: Regression (C++ vs Python reference, must match line-by-line)
         shell: msys2 {0}
         run: |
           cd src/cpp
           ./vesna_cpp.exe tests/regression.ves > cpp.out 2>&1 || true
-          python ../../src/vesna.py tests/regression.ves > py.out 2>&1 || true
+          python ../../vesna-py/src/vesna.py tests/regression.ves > py.out 2>&1 || true
           diff cpp.out py.out && echo "REGRESSION MATCH"
 
-      - name: Example scripts (C++ vs Python)
+      - name: Example scripts (C++ vs Python reference)
         shell: msys2 {0}
         run: |
           cd src/cpp
           for f in ../../examples/*.ves; do
             ./vesna_cpp.exe "$f" > cpp.out 2>&1 || true
-            python ../../src/vesna.py "$f" > py.out 2>&1 || true
+            python ../../vesna-py/src/vesna.py "$f" > py.out 2>&1 || true
             diff cpp.out py.out || exit 1
           done
           echo "EXAMPLES MATCH"

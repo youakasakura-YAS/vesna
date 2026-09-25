@@ -1,6 +1,8 @@
-# Vesna 内置函数
+# Vesna Builtin Functions
 
-所有内置函数用 `#` 前缀，参数用 `;` 分隔。
+[English](builtins.md) | [中文](builtins.zh-CN.md)
+
+All builtins use the `#` prefix; arguments are separated by `;`.
 
 ```text
 #up("hello"),           /* "HELLO" */
@@ -9,32 +11,32 @@
 
 ---
 
-## 字符串
+## Strings
 
-| 函数 | 说明 |
+| Function | Description |
 |---|---|
-| `#len(s)` | 长度 |
-| `#up(s)` | 转大写 |
-| `#down(s)` | 转小写 |
-| `#title(s)` | 每个单词首字母大写 |
-| `#capitalize(s)` | 首字母大写，其余小写 |
-| `#trim(s)` | 去两边空白 |
-| `#lstrip(s)` | 去左空白 |
-| `#rstrip(s)` | 去右空白 |
-| `#sub(s; start; end)` | 子串，索引从 1 开始 |
-| `#split(s; sep)` | 按分隔符切分 |
-| `#join(list; sep)` | 拼接列表 |
-| `#find(s; sub)` | 查找位置，找不到返回 0 |
-| `#rfind(s; sub)` | 从右查找 |
-| `#replace(s; old; new)` | 字面替换 |
-| `#count(s; sub)` | 子串出现次数 |
-| `#startswith(s; p)` | 是否以 p 开头 |
-| `#endswith(s; p)` | 是否以 p 结尾 |
-| `#repeat(s; n)` | 重复 n 次 |
-| `#lines(s)` | 按行切分 |
-| `#char_at(s; i)` | 第 i 个字符，从 1 开始 |
-| `#ord(c)` | 字符 → 码 |
-| `#chr(n)` | 码 → 字符 |
+| `#len(s)` | length |
+| `#up(s)` | uppercase |
+| `#down(s)` | lowercase |
+| `#title(s)` | capitalize each word |
+| `#capitalize(s)` | first letter upper, rest lower |
+| `#trim(s)` | strip both sides |
+| `#lstrip(s)` | strip left |
+| `#rstrip(s)` | strip right |
+| `#sub(s; start; end)` | substring, 1-based index |
+| `#split(s; sep)` | split by separator |
+| `#join(list; sep)` | join list |
+| `#find(s; sub)` | find position, 0 if absent |
+| `#rfind(s; sub)` | find from the right |
+| `#replace(s; old; new)` | literal replace |
+| `#count(s; sub)` | count occurrences |
+| `#startswith(s; p)` | starts with p? |
+| `#endswith(s; p)` | ends with p? |
+| `#repeat(s; n)` | repeat n times |
+| `#lines(s)` | split by lines |
+| `#char_at(s; i)` | i-th char, 1-based |
+| `#ord(c)` | char → code |
+| `#chr(n)` | code → char |
 
 ```text
 #sub("Hello"; '1'; '3'),        /* "He" */
@@ -47,17 +49,17 @@
 
 ---
 
-## 类型转换
+## Type conversion
 
-| 函数 | 说明 |
+| Function | Description |
 |---|---|
-| `#str(x)` | 转字符串 |
-| `#int(x)` | 转整数 |
-| `#float(x)` | 转浮点 |
-| `#bool(x)` | 转布尔 |
-| `#into(type; x)` | 通用转换 |
+| `#str(x)` | to string |
+| `#int(x)` | to int |
+| `#float(x)` | to float |
+| `#bool(x)` | to bool |
+| `#into(type; x)` | generic conversion |
 
-`#into` 的类型参数是**关键字**，不是字符串：
+The type argument of `#into` is a **keyword**, not a string:
 
 ```text
 #into(int; "42"),
@@ -68,15 +70,15 @@
 
 ---
 
-## 类型判断
+## Type checks
 
-| 函数 | 说明 |
+| Function | Description |
 |---|---|
-| `#type(x)` | 返回类型名 |
-| `#is_digit(c)` | 是否数字字符 |
-| `#is_alpha(c)` | 是否字母 |
-| `#is_alnum(c)` | 是否字母或数字 |
-| `#is_space(c)` | 是否空白 |
+| `#type(x)` | type name |
+| `#is_digit(c)` | is a digit char |
+| `#is_alpha(c)` | is a letter |
+| `#is_alnum(c)` | letter or digit |
+| `#is_space(c)` | whitespace |
 
 ```text
 #type('5'),        /* "int" */
@@ -86,17 +88,17 @@
 
 ---
 
-## 列表
+## Lists
 
-| 函数 | 说明 |
+| Function | Description |
 |---|---|
-| `#len(a)` | 长度 |
-| `#append(a; x)` | 追加元素 |
-| `#pop(a)` | 弹出末尾 |
-| `#sort(a)` | 排序（返回新列表） |
-| `#reverse(a)` | 反转 |
-| `#slice(a; start; end)` | 切片 |
-| `#contains(a; x)` | 是否包含 |
+| `#len(a)` | length |
+| `#append(a; x)` | append element |
+| `#pop(a)` | pop from the end |
+| `#sort(a)` | sort (returns a new list) |
+| `#reverse(a)` | reverse |
+| `#slice(a; start; end)` | slice |
+| `#contains(a; x)` | contains? |
 
 ```text
 a = ['3'; '1'; '2'],
@@ -106,14 +108,14 @@ a = ['3'; '1'; '2'],
 
 ---
 
-## 字典
+## Dicts
 
-| 函数 | 说明 |
+| Function | Description |
 |---|---|
-| `#len(d)` | 键的数量 |
-| `#keys(d)` | 键列表 |
-| `#values(d)` | 值列表 |
-| `#has_key(d; k)` | 是否包含键 |
+| `#len(d)` | number of keys |
+| `#keys(d)` | key list |
+| `#values(d)` | value list |
+| `#has_key(d; k)` | has key? |
 
 ```text
 d = {"a": '1'; "b": '2'},
@@ -123,16 +125,16 @@ d = {"a": '1'; "b": '2'},
 
 ---
 
-## 数学
+## Math
 
-| 函数 | 说明 |
+| Function | Description |
 |---|---|
-| `#min(a)` | 最小 |
-| `#max(a)` | 最大 |
-| `#sum(a)` | 求和 |
-| `#abs(x)` | 绝对值 |
-| `#round(x; n)` | 四舍五入，保留 n 位 |
-| `#pow(a; b)` | 幂 |
+| `#min(a)` | minimum |
+| `#max(a)` | maximum |
+| `#sum(a)` | sum |
+| `#abs(x)` | absolute value |
+| `#round(x; n)` | round to n digits |
+| `#pow(a; b)` | power |
 
 ```text
 #min([3; 1; 4]),       /* 1 */
@@ -145,14 +147,14 @@ d = {"a": '1'; "b": '2'},
 
 ---
 
-## 正则
+## Regex
 
-| 函数 | 说明 |
+| Function | Description |
 |---|---|
-| `#match(s; pat)` | 是否匹配 |
-| `#findall(s; pat)` | 提取所有匹配 |
-| `#gsub(s; pat; repl)` | 替换 |
-| `#search(s; pat)` | 搜索，返回分组 |
+| `#match(s; pat)` | matches? |
+| `#findall(s; pat)` | extract all matches |
+| `#gsub(s; pat; repl)` | replace |
+| `#search(s; pat)` | search, returns groups |
 
 ```text
 #match("2026-09-12"; "\\d{4}"),       /* true */
@@ -162,35 +164,35 @@ d = {"a": '1'; "b": '2'},
 
 ---
 
-## 文件与目录
+## Files & directories
 
-| 函数 | 说明 |
+| Function | Description |
 |---|---|
-| `#fread(path)` | 读文件 |
-| `#fwrite(path; text)` | 写文件 |
-| `#fappend(path; text)` | 追加 |
-| `#fexists(path)` | 文件是否存在 |
-| `#ls(dir)` | 列目录 |
-| `#glob(pat)` | 通配匹配 |
+| `#fread(path)` | read file |
+| `#fwrite(path; text)` | write file |
+| `#fappend(path; text)` | append |
+| `#fexists(path)` | file exists? |
+| `#ls(dir)` | list directory |
+| `#glob(pat)` | glob match |
 
 ```text
 #fread("data.txt"),
 #fwrite("out.txt"; "hello\n"),
 #fappend("log.txt"; "new line\n"),
 #fexists("data.txt"),       /* true */
-#ls("."),                   /* 文件列表 */
-#glob("*.ves"),             /* 所有 .ves 文件 */
+#ls("."),                   /* file list */
+#glob("*.ves"),             /* all .ves files */
 ```
 
 ---
 
-## 系统
+## System
 
-| 函数 | 说明 |
+| Function | Description |
 |---|---|
-| `#args()` | 命令行参数列表 |
-| `#stdin()` | 读标准输入 |
-| `#exit(code)` | 退出程序 |
+| `#args()` | command-line args |
+| `#stdin()` | read standard input |
+| `#exit(code)` | exit program |
 
 ```text
 args = #args(),
@@ -199,15 +201,15 @@ path = args['1'],
 
 ---
 
-## 函数式
+## Functional
 
-| 函数 | 说明 |
+| Function | Description |
 |---|---|
-| `#map(list; "fn")` | 对每个元素调用 fn |
-| `#filter(list; "fn")` | 保留 fn 返回真的元素 |
-| `#reduce(list; "fn"; init)` | 归约 |
+| `#map(list; "fn")` | call fn on each element |
+| `#filter(list; "fn")` | keep elements where fn is truthy |
+| `#reduce(list; "fn"; init)` | fold |
 
-**函数名用字符串**：
+**Function names are strings**:
 
 ```text
 def is_error(line)-
@@ -216,7 +218,7 @@ def is_error(line)-
 errors = #filter(lines; "is_error"),
 ```
 
-`#map` 和 `#filter` 的 `fn` 接受一个参数。`#reduce` 接受两个参数：累加器和当前元素。
+`#map` and `#filter` call `fn` with one argument. `#reduce` calls `fn` with two: accumulator and current element.
 
 ```text
 def add(a; b)-
@@ -227,22 +229,22 @@ total = #reduce(nums; "add"; '0'),
 
 ---
 
-## 插值字符串
+## Interpolated strings
 
-`#f"..."` 把字符串里的 `(var)` 替换为变量值：
+`#f"..."` replaces `(var)` in the string with the variable's value:
 
 ```text
 name = "Vesna",
 age = '1',
 print(#f"name=(name), age=(age)"),
-/* 输出：name=Vesna, age=1 */
+/* prints: name=Vesna, age=1 */
 ```
 
-`(name)` 里只能是变量名，不能是表达式。
+`(name)` can only hold a variable name, not an expression.
 
 ---
 
-## 完整例子
+## Full example
 
 ```text
 import json,
@@ -251,7 +253,7 @@ args = #args(),
 path = args['1'],
 
 if not #fexists(path)-
--print("找不到文件: " + path),
+-print("file not found: " + path),
 -#exit('1'),
 
 content = #fread(path),

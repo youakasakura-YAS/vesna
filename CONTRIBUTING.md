@@ -1,52 +1,55 @@
-# 贡献指南
+# Contributing
 
-欢迎为 Vesna 贡献代码、文档或示例。
+[English](CONTRIBUTING.md) | [中文](CONTRIBUTING.zh-CN.md)
 
-## 项目结构
+Welcome! Contributions of code, docs, and examples are appreciated.
+
+## Repository layout
 
 ```
-src\
-  vesna.py         Python 参考实现（语言语义的权威版本）
-  cpp\              C++ 实现（vesna.hpp / vesna.cpp / main.cpp）
-lib\               标准库（.ves）
-examples\          示例脚本
-vesna-vscode\      VSCode 插件（语法高亮 + LSP）
-docs\              文档
-bench\             性能基准
+src\cpp\            C++ implementation (vesna.hpp / vesna.cpp / main.cpp)
+src\cpp\tests\      regression assets
+lib\                standard library (.ves)
+examples\           example scripts
+docs\               documentation
+bench\              benchmarks
 ```
 
-## 开发流程
+The Python reference implementation lives in its own repository: [youakasakura-YAS/vesna-py](https://github.com/youakasakura-YAS/vesna-py).
 
-1. **Fork 本仓库**，从 `main` 分支新建功能分支
-2. **改 Python 版**时：`src\vesna.py` 是语义权威，改动需同时更新 `CHANGELOG.md`
-3. **改 C++ 版**时：必须保持与 Python 版**逐行输出一致**（见下方验证）
-4. **提交前验证**（Windows / MinGW）：
+## Workflow
+
+1. Fork this repo, create a feature branch from `main`
+2. C++ changes must keep **line-by-line output compatibility** with the Python reference (see verification below)
+3. Update `CHANGELOG.md` (and `CHANGELOG.zh-CN.md`) for user-visible changes
+4. Verify before committing (Windows / MinGW):
 
 ```bat
 cd src\cpp
 g++ -std=c++17 -O3 -flto -static -Wall -Wextra vesna.cpp main.cpp -o vesna_cpp.exe -ladvapi32
 vesna_cpp.exe tests\regression.ves > cpp.out
-python ..\vesna.py tests\regression.ves > py.out
-fc cpp.out py.out            :: 必须无差异
+git clone https://github.com/youakasakura-YAS/vesna-py
+python vesna-py\src\vesna.py tests\regression.ves > py.out
+fc cpp.out py.out          :: must show no differences
 ```
 
-5. 提交信息用中文或英文均可，描述清楚改动意图
+5. Commit messages in Chinese or English, describing the change clearly
 
-## 回归测试资产
+## Regression assets
 
-- `src\cpp\tests\regression.ves` — 35 项功能回归（R1–R35）
-- `src\cpp\tests\fs_test.ves` — 文件系统内置测试（FS1–FS8，脚本自清理）
-- `examples\` — 13 个示例脚本，全部要求 C++ 版与 Python 版输出一致
-- `bench\loop.ves` — 循环性能基准
+- `src\cpp\tests\regression.ves` — 35 functional checks (R1–R35)
+- `src\cpp\tests\fs_test.ves` — filesystem builtin checks (FS1–FS8, self-cleaning)
+- `examples\` — 13 example scripts, all must match the Python reference output
+- `bench\loop.ves` — loop performance benchmark
 
-## 性能优化
+## Performance work
 
-C++ 版性能优化（正则缓存、Value 判别联合、标识符 intern 等）的每一次改动都要求：
+Every performance change to the C++ implementation must:
 
-1. 全量回归通过（regression + 示例 + fs_test）
-2. 提供 `bench` 实测对比（用 `cmd /c "... > nul 2>&1"` 重定向计时，避免管道干扰）
-3. 更新 `CHANGELOG.md`
+1. Pass full regression (regression + examples + fs_test)
+2. Provide `bench` measurements (use `cmd /c "... > nul 2>&1"` redirection to avoid pipeline noise)
+3. Update `CHANGELOG.md`
 
-## 许可
+## License
 
-贡献的代码默认采用与本仓库相同的 [MIT License](LICENSE)。
+Contributions default to the same [MIT License](LICENSE).

@@ -51,3 +51,10 @@ _tmp.ves
 
 # 回归基准数据（10 万行日志，供 bench 使用）
 !src/cpp/tests/big.log
+
+# Python 版已拆分至独立仓库 youakasakura-YAS/vesna-py（本地保留供回归对照）
+src/vesna.py
+bin/vesna.exe
+
+# 本地备份快照（保留最近 3 次）
+_backup/

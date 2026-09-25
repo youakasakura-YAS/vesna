@@ -28,13 +28,6 @@ jobs:
           cd src/cpp
           g++ -std=c++17 -O3 -flto -static -Wall -Wextra vesna.cpp main.cpp -o vesna_cpp.exe -ladvapi32
 
-      - name: Package Python exe (PyInstaller)
-        shell: msys2 {0}
-        run: |
-          python -m pip install --quiet pyinstaller
-          cd src
-          python -m PyInstaller --onefile --name vesna vesna.py
-
       - name: Package VSCode extension (.vsix)
         run: |
           cd vesna-vscode
@@ -47,11 +40,10 @@ jobs:
           V=0.3.0
           mkdir -p release/vesna-$V-windows-x64/{bin,lib,examples,docs}
           cp src/cpp/vesna_cpp.exe release/vesna-$V-windows-x64/bin/
-          cp src/dist/vesna.exe release/vesna-$V-windows-x64/bin/ || true
           cp lib/*.ves release/vesna-$V-windows-x64/lib/
           cp examples/*.ves release/vesna-$V-windows-x64/examples/
           cp docs/*.md release/vesna-$V-windows-x64/docs/
-          cp README.md CHANGELOG.md LICENSE icon.png vesna.ico release/vesna-$V-windows-x64/
+          cp README.md README.zh-CN.md CHANGELOG.md CHANGELOG.zh-CN.md CONTRIBUTING.md CONTRIBUTING.zh-CN.md LICENSE icon.png vesna.ico release/vesna-$V-windows-x64/
           cp vesna-vscode/vesna-0.3.0.vsix release/vesna-$V-windows-x64/vesna-vscode-0.3.0.vsix
           cd release
           powershell -Command "Compress-Archive -Path vesna-$V-windows-x64 -DestinationPath vesna-$V-windows-x64.zip -Force"

@@ -1,39 +1,41 @@
-# Vesna 语法
+# Vesna Syntax
 
-## 目录
+[English](syntax.md) | [中文](syntax.zh-CN.md)
 
-1. [字面量](#字面量)
-2. [变量与赋值](#变量与赋值)
-3. [运算符](#运算符)
-4. [控制流](#控制流)
-5. [函数](#函数)
-6. [异常](#异常)
-7. [模块](#模块)
-8. [注释](#注释)
-9. [语句与块](#语句与块)
+## Contents
+
+1. [Literals](#literals)
+2. [Variables & assignment](#variables--assignment)
+3. [Operators](#operators)
+4. [Control flow](#control-flow)
+5. [Functions](#functions)
+6. [Exceptions](#exceptions)
+7. [Modules](#modules)
+8. [Comments](#comments)
+9. [Statements & blocks](#statements--blocks)
 
 ---
 
-## 字面量
+## Literals
 
-### 字符串
+### Strings
 
-用双引号：
+Double quotes:
 
 ```text
 s = "hello",
 ```
 
-转义：
+Escapes:
 
 ```text
-print("换行:\n制表:\t结束"),
-print("引号: \" 反斜杠: \\"),
+print("newline:\ntab:\tend"),
+print("quote: \" backslash: \\"),
 ```
 
-### 数字
+### Numbers
 
-用单引号包裹，支持整数、浮点、负数：
+Single quotes, integers / floats / negatives:
 
 ```text
 a = '42',
@@ -42,42 +44,42 @@ c = '-5',
 d = '-3.14',
 ```
 
-**注意**：数字必须带单引号，`42` 会报「未知字符」。
+**Note**: numbers must be single-quoted; bare `42` raises "unknown character".
 
-### 布尔
+### Booleans
 
 ```text
 t = true,
 f = false,
 ```
 
-### 空值
+### None
 
 ```text
 n = none,
 ```
 
-### 列表
+### Lists
 
-用 `;` 分隔元素，索引从 1 开始：
+`;`-separated, 1-based indexing:
 
 ```text
 a = ['1'; '2'; '3'],
 a['1']         /* '1' */
-a[-1]          /* '3'，负索引从末尾 */
+a[-1]          /* '3', negative index from the end */
 ```
 
-### 组
+### Groups
 
-类似列表，但**不可变**：
+Like lists but **immutable**:
 
 ```text
 p = ('1'; '2'),
 ```
 
-### 字典
+### Dicts
 
-键值用 `:` 分隔，键值对用 `;` 分隔：
+`:` separates key/value, `;` separates pairs:
 
 ```text
 d = {"name": "Tom"; "age": '18'},
@@ -87,7 +89,7 @@ d["age"] = '19',
 
 ---
 
-## 变量与赋值
+## Variables & assignment
 
 ```text
 a = "abc",
@@ -95,7 +97,7 @@ b = '123',
 c = a,
 ```
 
-复合赋值：
+Compound assignment:
 
 ```text
 x = '10',
@@ -105,7 +107,7 @@ x *= '2',      /* 24 */
 x /= '4',      /* 6.0 */
 ```
 
-下标赋值：
+Indexed assignment:
 
 ```text
 a = ['1'; '2'; '3'],
@@ -117,19 +119,19 @@ d["k"] = '9',
 
 ---
 
-## 运算符
+## Operators
 
-### 算术
+### Arithmetic
 
-| 运算符 | 含义 |
+| Operator | Meaning |
 |---|---|
-| `+` | 加（字符串用 `+` 拼接） |
-| `-` | 减 |
-| `*` | 乘 |
-| `/` | 除 |
-| `./` | 取整数部分 |
-| `/.` | 取小数部分 |
-| `/-` | 取余 |
+| `+` | add (also string concat) |
+| `-` | subtract |
+| `*` | multiply |
+| `/` | divide |
+| `./` | integer part |
+| `/.` | fractional part |
+| `/-` | modulo |
 
 ```text
 '10' + '3'       /* 13 */
@@ -139,24 +141,24 @@ d["k"] = '9',
 '10' /- '3'      /* 1 */
 ```
 
-### 比较
+### Comparison
 
-| 运算符 | 含义 |
+| Operator | Meaning |
 |---|---|
-| `==` | 等于 |
-| `!=` | 不等于 |
-| `<` `>` | 小于 / 大于 |
-| `<=` `>=` | 小于等于 / 大于等于 |
+| `==` | equal |
+| `!=` | not equal |
+| `<` `>` | less / greater |
+| `<=` `>=` | less-equal / greater-equal |
 
-返回 `true` / `false`。
+Returns `true` / `false`.
 
-### 逻辑
+### Logic
 
-| 运算符 | 含义 |
+| Operator | Meaning |
 |---|---|
-| `and` | 与 |
-| `or` | 或 |
-| `not` | 非 |
+| `and` | and |
+| `or` | or |
+| `not` | not |
 
 ```text
 if a > '0' and not b-
@@ -165,11 +167,11 @@ if a > '0' and not b-
 
 ---
 
-## 控制流
+## Control flow
 
 ### if / elif / else
 
-`elif` 和 `else` 与 `if` **同层**：
+`elif` and `else` sit at the **same level** as `if`:
 
 ```text
 if a == '1'-
@@ -211,12 +213,12 @@ for i in ['1'; '2'; '3']-
 try-
 -n = #int("abc"),
 -catch e
--print("失败: " + e),
+-print("failed: " + e),
 ```
 
 ---
 
-## 函数
+## Functions
 
 ```text
 def add(a; b)-
@@ -225,7 +227,7 @@ def add(a; b)-
 print(add('1'; '2')),
 ```
 
-带默认值：
+Default values:
 
 ```text
 def greet(name; prefix = "Hello")-
@@ -235,11 +237,11 @@ print(greet("Vesna")),
 print(greet("Vesna"; "Hi")),
 ```
 
-**参数之间用 `;` 分隔。**
+**Parameters are separated by `;`.**
 
 ---
 
-## 模块
+## Modules
 
 ```text
 import csv,
@@ -249,38 +251,38 @@ rows = csv_parse(#fread("data.csv")),
 print(json_write(rows)),
 ```
 
-`import xxx` 会找：
+`import xxx` searches:
 
 ```text
-<脚本目录>\xxx.ves
-<脚本目录>\lib\xxx.ves
+<script dir>\xxx.ves
+<script dir>\lib\xxx.ves
 <VESNA_HOME>\lib\xxx.ves
 ```
 
-导入后，模块里的**变量和函数**都进入当前作用域。
+After import, the module's **variables and functions** enter the current scope.
 
 ---
 
-## 注释
+## Comments
 
-块注释：
+Block comments:
 
 ```text
-/* 这是注释 */
+/* this is a comment */
 
-/* 多行
-   注释 */
+/* multi-line
+   comment */
 ```
 
-注释不能被嵌套。
+Comments cannot be nested.
 
 ---
 
-## 语句与块
+## Statements & blocks
 
-### 语句分隔
+### Statement separator
 
-**每条语句末尾用 `,`**：
+**Every statement ends with `,`**:
 
 ```text
 a = '1',
@@ -288,15 +290,15 @@ b = '2',
 print(a + b),
 ```
 
-一行可以写多条：
+Multiple statements on one line:
 
 ```text
 a = '1', b = '2', print(a + b),
 ```
 
-### 块
+### Blocks
 
-用 `-` 表示缩进。每嵌套一层，多一个 `-`：
+`-` means indentation. Each nesting level adds one `-`:
 
 ```text
 if a > '0'-
@@ -305,22 +307,22 @@ if a > '0'-
 --print("big"),
 ```
 
-`if` / `elif` / `else` / `while` / `for` / `def` / `try` 的行末要加 `-`。
+`if` / `elif` / `else` / `while` / `for` / `def` / `try` lines end with `-`.
 
-### 内置函数
+### Builtins
 
-内置函数用 `#` 前缀：
+Builtins use the `#` prefix:
 
 ```text
 #up("hello"),        /* "HELLO" */
 #split("a,b,c"; ",")  /* ["a"; "b"; "c"] */
 ```
 
-参数之间用 `;`。
+Parameters are separated by `;`.
 
-### 起止符
+### Start/end tags
 
-`.ves` 文件里不需要。嵌入其它文件时：
+Not needed in `.ves` files. When embedding in other files:
 
 ```text
 <vesna>
@@ -330,7 +332,7 @@ if a > '0'-
 
 ---
 
-## 完整示例
+## Full example
 
 ```text
 import csv,
@@ -343,7 +345,7 @@ text = #fread("app.log"),
 lines = #lines(text),
 errors = #filter(lines; "is_error"),
 
-print("错误行数: " + #str(#len(errors))),
+print("error lines: " + #str(#len(errors))),
 
 for e in errors-
 -print(#trim(e)),
