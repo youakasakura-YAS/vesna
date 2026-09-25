@@ -2,7 +2,12 @@
 
 [English](CHANGELOG.md) | [中文](CHANGELOG.zh-CN.md)
 
-## 1.3.0
+## 1.3.1
+
+### Fixed
+- `--install` now works when run from the `bin\` directory of a release package (the installer auto-detects a trailing `\bin` in the current directory and walks up to the package root). Previously it errored with "找不到 bin\vesna.exe".
+
+## 1.3.0## 1.3.0
 
 ### Added
 - **vpm validation** (`lib/pkg.ves`): metadata checks (`name` `^[a-z][a-z0-9_-]+$`, `version` `x.y.z`, `entry` must exist), optional `sha256` integrity verification from registry entries, automatic dependency installation with version checks and loop protection, and `remove` dependency guard (`--force` overrides). `init [name]` now validates the package name.

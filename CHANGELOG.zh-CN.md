@@ -2,7 +2,12 @@
 
 [English](CHANGELOG.md) | [中文](CHANGELOG.zh-CN.md)
 
-## 1.3.0
+## 1.3.1
+
+### 修复
+- `--install` 现在支持在发布包的 `bin\` 目录内直接运行（安装程序会自动识别当前目录末尾的 `\bin` 并上溯到包根目录）。此前会报「找不到 bin\vesna.exe」。
+
+## 1.3.0## 1.3.0
 
 ### 新增
 - **vpm 校验增强**（`lib/pkg.ves`）：元数据校验（`name` 须匹配 `^[a-z][a-z0-9_-]+$`、`version` 须为 `x.y.z`、`entry` 必须存在）、registry 条目可选 `sha256` 完整性校验、依赖自动安装（含版本检查与循环保护）、`remove` 依赖保护（`--force` 覆盖）。`init [名称]` 现在校验包名。

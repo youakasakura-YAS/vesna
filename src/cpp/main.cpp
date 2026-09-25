@@ -1,4 +1,4 @@
-// main.cpp — Vesna 1.0.0 C++ 命令行入口
+// main.cpp — Vesna 1.3.1 C++ 命令行入口
 #include "vesna.hpp"
 #include "platform.h"
 
@@ -13,6 +13,9 @@ static const char* INSTALL_SCRIPT = R"VES(
 /* Vesna 内置安装程序 */
 
 src = #cwd(),
+/* 智能定位：在 bin 目录内运行时自动上溯到包根目录 */
+if #len(src) >= '5' and #sub(src; #len(src) - '3'; #len(src)) == "\\bin"-
+-src = #sub(src; '1'; #len(src) - '4'),
 args = #args(),
 
 target = "C:\\Vesna",
