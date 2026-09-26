@@ -13,15 +13,18 @@
 #include <cwchar>
 #include <direct.h>
 #include <filesystem>
+#include <functional>
 #include <fstream>
 #include <iostream>
 #ifdef _WIN32
 #include <conio.h>
 #endif
 #include <iterator>
+#include <map>
 #include <random>
 #include <regex>
 #include <set>
+#include <unordered_map>
 #include <sstream>
 #include <thread>
 #include <mutex>
@@ -430,7 +433,13 @@ static std::vector<std::string> globPaths(const std::string& pat) {
     for (const auto& e : entries) {
         if (fnmatchSimple(fname, e)) {
             std::string full = dir;
-            if (full.back() != '\\' && full.back() != '/') full += '\\';
+            if (full.back() != '\\' && full.back() != '/') {
+#ifdef _WIN32
+                full += '\\';
+#else
+                full += '/';
+#endif
+            }
             full += e;
             out.push_back(full);
         }
@@ -1994,17 +2003,22 @@ void Interp::doImport(const std::string& name, const std::shared_ptr<Env>& env) 
         if (!fileExists(p)) return false;
         return loadSrc(readFileUtf8(p), p);
     };
+#ifdef _WIN32
+    const std::string sep = "\\";
+#else
+    const std::string sep = "/";
+#endif
     std::vector<std::string> paths = {
-        script_dir + "\\" + n + ".ves",
-        script_dir + "\\lib\\" + n + ".ves",
-        findVesnaHome() + "\\lib\\" + n + ".ves",
-        findVesnaHome() + "\\packages\\" + n + "\\" + n + ".ves",
+        script_dir + sep + n + ".ves",
+        script_dir + sep + "lib" + sep + n + ".ves",
+        findVesnaHome() + sep + "lib" + sep + n + ".ves",
+        findVesnaHome() + sep + "packages" + sep + n + sep + n + ".ves",
     };
     for (const auto& p : paths) if (loadOne(p)) return;
     // 单文件分发：内置 lib（csv/json/pkg/stat/text）嵌入 exe，无外部 lib 目录也能加载
     if (loadSrc(embeddedLib(n + ".ves"), "<embedded>/" + n + ".ves")) return;
     // vpm 包：读取 vesna-pkg.json 的 entry 字段（entry 可与包名不同，如 hello_vesna -> hello.ves）
-    std::string pkg_meta = findVesnaHome() + "\\packages\\" + n + "\\vesna-pkg.json";
+    std::string pkg_meta = findVesnaHome() + sep + "packages" + sep + n + sep + "vesna-pkg.json";
     if (fileExists(pkg_meta)) {
         std::string msrc = readFileUtf8(pkg_meta);
         std::smatch m;
@@ -2012,7 +2026,7 @@ void Interp::doImport(const std::string& name, const std::shared_ptr<Env>& env) 
         if (std::regex_search(msrc, m, entry_re)) {
             std::string entry = m[1].str();
             if (entry.find("..") == std::string::npos && entry.find(':') == std::string::npos) {
-                if (loadOne(findVesnaHome() + "\\packages\\" + n + "\\" + entry)) return;
+                if (loadOne(findVesnaHome() + sep + "packages" + sep + n + sep + entry)) return;
             }
         }
     }
@@ -4119,9 +4133,15 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
                     Value r = sub.callFuncByValues(nameV.s(), nid, argv, gcopy);
                     std::lock_guard<std::mutex> lk2(g_threads.m);
                     g_threads.results[id] = r;
+                } catch (ReturnSignal& rs) {
+                    std::lock_guard<std::mutex> lk2(g_threads.m);
+                    g_threads.results[id] = rs.value;
                 } catch (const std::exception& e) {
                     std::lock_guard<std::mutex> lk2(g_threads.m);
                     g_threads.errors[id] = std::string(e.what());
+                } catch (...) {
+                    std::lock_guard<std::mutex> lk2(g_threads.m);
+                    g_threads.errors[id] = "unknown thread error";
                 }
             });
         }
@@ -4840,7 +4860,7 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
             throw VesnaError("-tcp_recv 需要句柄与最大字节数整数");
         int maxlen = (int)mV.i();
         if (maxlen <= 0) maxlen = 4096;
-        std::string out((size_t)maxlen, ' ');
+        std::string out((size_t)maxlen, '\0');
 #ifdef _WIN32
         int n = recv((SOCKET)sV.i(), &out[0], maxlen, 0);
         if (n == SOCKET_ERROR) throw VesnaError("-tcp_recv 接收失败");
