@@ -2,7 +2,15 @@
 
 [English](CHANGELOG.md) | [中文](CHANGELOG.zh-CN.md)
 
+## 1.9.0
+
+### Added
+- **TCP sockets (native, no third-party deps)**: `#tcp_connect(host; port)`, `#tcp_listen(port)`, `#tcp_accept(srv)`, `#tcp_send(sock; data)`, `#tcp_recv(sock; maxlen)`, `#tcp_close(sock)` — listen / accept / send / receive for building custom servers and clients; handles are plain ints, work across `#thread` workers (Windows winsock + POSIX sockets)
+- **File / folder encryption**: `#encrypt_file(path; key)` / `#decrypt_file(path; key)` encrypt/restore a single file in place (AES-256-CBC, base64 ciphertext); `#encrypt_dir(dir; key)` / `#decrypt_dir(dir; key)` recurse a whole folder; `VSENC1` magic prefix makes wrong-key decryption fail loudly
+- VSCode extension 0.9.0 (syntax highlighting for the 10 new builtins)
+
 ## 1.8.0
+
 
 ### Added
 - **vpm validation hardening**:

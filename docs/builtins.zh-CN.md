@@ -454,6 +454,44 @@ print(#f"name=(name), age=(age)"),
 
 示例：`#ffi_call("kernel32.dll"; "GetTickCount")`、`#ffi_call("kernel32.dll"; "GetModuleHandleA"; "kernel32.dll")`。
 
+
+## 1.9 网络 / 文件加解密
+
+### TCP 套接字（原生）
+
+| 函数 | 说明 |
+|---|---|
+| `#tcp_connect(host; port)` | 连接 TCP 服务器，返回套接字句柄（整数） |
+| `#tcp_listen(port)` | 在端口上 bind + listen，返回监听句柄（整数） |
+| `#tcp_accept(srv)` | 在监听句柄上阻塞接受连接，返回客户端句柄（整数） |
+| `#tcp_send(sock; data)` | 把字符串完整发送到套接字，返回已发送字节数（整数） |
+| `#tcp_recv(sock; maxlen)` | 接收至多 `maxlen` 字节并以字符串返回；对端关闭时返回空串 |
+| `#tcp_close(sock)` | 关闭套接字 |
+
+回显服务示例：
+
+```
+srv = #tcp_listen('9000'),
+cli = #tcp_accept(srv),
+msg = #tcp_recv(cli; '4096'),
+#tcp_send(cli; "echo: " + msg),
+#tcp_close(cli),
+#tcp_close(srv),
+```
+
+句柄就是普通整数，可存进列表/字典，也可跨 `#thread` 线程传递。
+
+### 文件 / 文件夹加解密（AES-256-CBC，原地操作）
+
+| 函数 | 说明 |
+|---|---|
+| `#encrypt_file(path; key)` | 原地加密文件；内容替换为 base64 密文；返回 `true` |
+| `#decrypt_file(path; key)` | 还原 `#encrypt_file` 加密的文件；密钥错误或非 Vesna 密文会报错；返回 `true` |
+| `#encrypt_dir(dir; key)` | 递归原地加密目录下所有文件，返回处理文件数 |
+| `#decrypt_dir(dir; key)` | 递归还原 `#encrypt_dir` 加密的文件，返回还原文件数 |
+
+说明：密钥经 SHA-256 派生（与 `#aes_encrypt` 一致）；密文带 `VSENC1` 魔数前缀，错误密钥解密会被识别。操作为原地覆盖——批量执行前如需可先备份。
+
 ## 完整例子
 
 ```text

@@ -2,7 +2,15 @@
 
 [English](CHANGELOG.md) | [中文](CHANGELOG.zh-CN.md)
 
+## 1.9.0
+
+### 新增
+- **TCP 套接字（原生，无第三方依赖）**：`#tcp_connect(host; port)`、`#tcp_listen(port)`、`#tcp_accept(srv)`、`#tcp_send(sock; data)`、`#tcp_recv(sock; maxlen)`、`#tcp_close(sock)` —— 监听 / 接受 / 收发，可自建服务端与客户端；句柄是普通整数，可跨 `#thread` 线程使用（Windows winsock + POSIX socket）
+- **文件 / 文件夹加解密**：`#encrypt_file(path; key)` / `#decrypt_file(path; key)` 原地加密/还原单个文件（AES-256-CBC，base64 密文）；`#encrypt_dir(dir; key)` / `#decrypt_dir(dir; key)` 递归处理整个目录；`VSENC1` 魔数前缀让错误密钥解密直接报错
+- VSCode 插件 0.9.0（10 个新内置的高亮）
+
 ## 1.8.0
+
 
 ### 新增
 - **vpm 校验增强**：

@@ -34,7 +34,7 @@ namespace vesna {
 
 static std::string parentDir(const std::string& path);
 static std::string strFloat(double f);
-const std::string VERSION = "1.8.0";
+const std::string VERSION = "1.9.0";
 
 
 // ============================================================
@@ -2556,7 +2556,9 @@ const std::vector<std::pair<std::string, int>> g_builtinNames = {
     {"up",1},{"down",2},{"len",3},{"sub",4},{"split",5},{"join",6},{"find",7},{"replace",8},{"append",9},{"pop",10},{"keys",11},{"values",12},{"type",13},{"args",14},{"fread",15},{"fwrite",16},{"fappend",17},{"fexists",18},{"exit",19},{"f",20},{"trim",21},{"startswith",22},{"endswith",23},{"lines",24},{"repeat",25},{"has_key",26},{"str",27},{"int",28},{"float",29},{"bool",30},{"char_at",31},{"sort",32},{"reverse",33},{"slice",34},{"map",35},{"filter",36},{"reduce",37},{"match",38},{"search",39},{"findall",40},{"gsub",41},{"ls",42},{"glob",43},{"stdin",44},{"ord",45},{"chr",46},{"is_digit",47},{"is_alpha",48},{"is_alnum",49},{"is_space",50},{"lstrip",51},{"rstrip",52},{"title",53},{"capitalize",54},{"count",55},{"rfind",56},{"min",57},{"max",58},{"sum",59},{"abs",60},{"round",61},{"pow",62},{"contains",63},{"mkdir",64},{"copy",65},{"rmdir",66},{"rename",67},{"getenv",68},{"setenv",69},{"cwd",70},{"chdir",71},{"regwrite",72},{"regdelete",73},{"shell",74},{"path_clean",75},{"regenv",146},{"cpdir",147},{"sqrt",76},{"floor",77},{"ceil",78},{"exp",79},{"log",80},{"log10",81},{"sin",82},{"cos",83},{"tan",84},{"sign",85},{"clamp",86},{"rand",87},{"randint",88},{"choice",89},{"shuffle",145},{"hex",90},{"bin",91},{"oct",92},{"pad",93},{"lpad",94},{"rpad",95},{"format",96},{"hash",97},{"range",98},{"first",99},{"last",100},{"take",101},{"drop",102},{"set",103},{"flatten",104},{"zip",105},{"insert",106},{"remove",107},{"index_of",108},{"enumerate",109},{"concat",110},{"get",111},{"items",112},{"pop_key",113},{"is_str",114},{"is_int",115},{"is_float",116},{"is_bool",117},{"is_list",118},{"is_dict",119},{"is_none",120},{"is_group",121},{"now",122},{"date",123},{"sleep",124},{"ticks",125},{"platform",126},{"temp_dir",127},{"fremove",128},{"fmove",129},{"fsize",130},{"is_dir",131},{"is_file",132},{"mkdirs",133},{"base64_encode",134},{"base64_decode",135},{"url_encode",136},{"url_decode",137},{"each",138},{"all",139},{"any",140},{"find_first",141},{"sort_by",142},{"throw",143},{"assert",144},{"thread",148},{"thread_join",149},{"thread_count",150},{"lock",151},{"unlock",152},{"http_get",153},{"http_post",154},{"tcp_ping",155},{"bin_read",156},{"bin_write",157},{"bin_hex",158},{"bin_unhex",159},{"bin_base64_encode",160},{"bin_base64_decode",161},{"json_encode",162},{"json_decode",163},{"re_groups",164},{"sha256",165},{"aes_encrypt",166},{"aes_decrypt",167},{"proc_run",168},{"ffi_call",169},
     {"csv_parse",170},{"csv_build",171},{"ini_read",172},{"ini_write",173},
     {"xml_parse",174},{"ffi_call_s",175},{"call",176},
-    {"date_format",177},{"parse_time",178},{"uuid",179},{"http_server",180},{"file_time",181},{"truncate",182},{"arch",183}
+    {"date_format",177},{"parse_time",178},{"uuid",179},{"http_server",180},{"file_time",181},{"truncate",182},{"arch",183},
+    {"tcp_connect",184},{"tcp_listen",185},{"tcp_accept",186},{"tcp_send",187},{"tcp_recv",188},{"tcp_close",189},
+    {"encrypt_file",190},{"decrypt_file",191},{"encrypt_dir",192},{"decrypt_dir",193}
 };
 
 
@@ -4715,16 +4717,270 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
         f.close();
         return mkNone();
     }
-    case 183: {  // -arch() 架构
-#if defined(_M_X64) || defined(__x86_64__)
+    case 183: {  // -arch()
+#ifdef _WIN32
         return mkStr("x64");
-#elif defined(_M_ARM64) || defined(__aarch64__)
+#elif defined(__aarch64__)
         return mkStr("arm64");
-#elif defined(_M_IX86) || defined(__i386__)
+#elif defined(__i386__) || defined(_M_IX86)
         return mkStr("x86");
 #else
         return mkStr("unknown");
 #endif
+    }
+
+    // ============ 1.9.0：TCP socket 原语 + 文件/文件夹加解密 ============
+    case 184: {  // -tcp_connect(host; port) -> socket 句柄
+        Value hV = ev(0), pV = ev(1);
+        if (hV.t() != Value::T::STR || pV.t() != Value::T::INT)
+            throw VesnaError("-tcp_connect 需要主机字符串与端口整数");
+        std::string host = hV.s();
+        int port = (int)pV.i();
+#ifdef _WIN32
+        static bool wsa_ready = false;
+        if (!wsa_ready) { WSADATA wsa; if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) throw VesnaError("-tcp_connect WSAStartup 失败"); wsa_ready = true; }
+        SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        if (s == INVALID_SOCKET) throw VesnaError("-tcp_connect 无法创建套接字");
+        struct sockaddr_in addr;
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons((u_short)port);
+        addr.sin_addr.s_addr = inet_addr(host.c_str());
+        if (addr.sin_addr.s_addr == INADDR_NONE) {
+            hostent* he = gethostbyname(host.c_str());
+            if (!he) { closesocket(s); throw VesnaError("-tcp_connect 无法解析主机: " + host); }
+            std::memcpy(&addr.sin_addr, he->h_addr, (size_t)he->h_length);
+        }
+        if (connect(s, (struct sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) {
+            closesocket(s); throw VesnaError("-tcp_connect 连接失败: " + host + ":" + std::to_string(port));
+        }
+        return mkInt((int64_t)s);
+#else
+        int s = socket(AF_INET, SOCK_STREAM, 0);
+        if (s < 0) throw VesnaError("-tcp_connect 无法创建套接字");
+        struct sockaddr_in addr;
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons((u_short)port);
+        struct hostent* he = gethostbyname(host.c_str());
+        if (!he) { close(s); throw VesnaError("-tcp_connect 无法解析主机: " + host); }
+        std::memcpy(&addr.sin_addr, he->h_addr, (size_t)he->h_length);
+        if (connect(s, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
+            close(s); throw VesnaError("-tcp_connect 连接失败: " + host + ":" + std::to_string(port));
+        }
+        return mkInt((int64_t)s);
+#endif
+    }
+    case 185: {  // -tcp_listen(port) -> 监听 socket 句柄
+        Value pV = ev(0);
+        if (pV.t() != Value::T::INT) throw VesnaError("-tcp_listen 需要端口整数");
+        int port = (int)pV.i();
+#ifdef _WIN32
+        static bool wsa_ready2 = false;
+        if (!wsa_ready2) { WSADATA wsa; if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) throw VesnaError("-tcp_listen WSAStartup 失败"); wsa_ready2 = true; }
+        SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        if (s == INVALID_SOCKET) throw VesnaError("-tcp_listen 无法创建套接字");
+        int opt = 1;
+        setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt));
+        struct sockaddr_in addr;
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons((u_short)port);
+        addr.sin_addr.s_addr = INADDR_ANY;
+        if (bind(s, (struct sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) {
+            closesocket(s); throw VesnaError("-tcp_listen 绑定失败: 端口 " + std::to_string(port) + " 被占用?");
+        }
+        if (listen(s, 8) == SOCKET_ERROR) { closesocket(s); throw VesnaError("-tcp_listen listen 失败"); }
+        return mkInt((int64_t)s);
+#else
+        int s = socket(AF_INET, SOCK_STREAM, 0);
+        if (s < 0) throw VesnaError("-tcp_listen 无法创建套接字");
+        int opt = 1;
+        setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+        struct sockaddr_in addr;
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons((u_short)port);
+        addr.sin_addr.s_addr = INADDR_ANY;
+        if (bind(s, (struct sockaddr*)&addr, sizeof(addr)) != 0) { close(s); throw VesnaError("-tcp_listen 绑定失败"); }
+        if (listen(s, 8) != 0) { close(s); throw VesnaError("-tcp_listen listen 失败"); }
+        return mkInt((int64_t)s);
+#endif
+    }
+    case 186: {  // -tcp_accept(srv) -> 客户端 socket 句柄（阻塞）
+        Value sV = ev(0);
+        if (sV.t() != Value::T::INT) throw VesnaError("-tcp_accept 需要监听句柄整数");
+#ifdef _WIN32
+        SOCKET cli = accept((SOCKET)sV.i(), nullptr, nullptr);
+        if (cli == INVALID_SOCKET) throw VesnaError("-tcp_accept 接受连接失败");
+        return mkInt((int64_t)cli);
+#else
+        int cli = accept((int)sV.i(), nullptr, nullptr);
+        if (cli < 0) throw VesnaError("-tcp_accept 接受连接失败");
+        return mkInt((int64_t)cli);
+#endif
+    }
+    case 187: {  // -tcp_send(sock; data) -> 发送字节数
+        Value sV = ev(0), dV = ev(1);
+        if (sV.t() != Value::T::INT || dV.t() != Value::T::STR)
+            throw VesnaError("-tcp_send 需要句柄整数与数据字符串");
+        const std::string& data = dV.s();
+        size_t total = 0;
+        while (total < data.size()) {
+#ifdef _WIN32
+            int n = send((SOCKET)sV.i(), data.data() + total, (int)(data.size() - total), 0);
+            if (n == SOCKET_ERROR) throw VesnaError("-tcp_send 发送失败");
+#else
+            int n = (int)::send((int)sV.i(), data.data() + total, data.size() - total, 0);
+            if (n < 0) throw VesnaError("-tcp_send 发送失败");
+#endif
+            total += (size_t)n;
+        }
+        return mkInt((int64_t)total);
+    }
+    case 188: {  // -tcp_recv(sock; maxlen) -> 收到的字符串（对端关闭返回空串）
+        Value sV = ev(0), mV = ev(1);
+        if (sV.t() != Value::T::INT || mV.t() != Value::T::INT)
+            throw VesnaError("-tcp_recv 需要句柄与最大字节数整数");
+        int maxlen = (int)mV.i();
+        if (maxlen <= 0) maxlen = 4096;
+        std::string out((size_t)maxlen, ' ');
+#ifdef _WIN32
+        int n = recv((SOCKET)sV.i(), &out[0], maxlen, 0);
+        if (n == SOCKET_ERROR) throw VesnaError("-tcp_recv 接收失败");
+#else
+        int n = (int)::recv((int)sV.i(), &out[0], (size_t)maxlen, 0);
+        if (n < 0) throw VesnaError("-tcp_recv 接收失败");
+#endif
+        if (n == 0) return mkStr("");
+        out.resize((size_t)n);
+        return mkStr(out);
+    }
+    case 189: {  // -tcp_close(sock)
+        Value sV = ev(0);
+        if (sV.t() != Value::T::INT) throw VesnaError("-tcp_close 需要句柄整数");
+#ifdef _WIN32
+        closesocket((SOCKET)sV.i());
+#else
+        close((int)sV.i());
+#endif
+        return mkNone();
+    }
+    case 190: {  // -encrypt_file(path; key) 原地 AES 加密（文件内容替换为 base64 密文）
+        Value pV = ev(0), kV = ev(1);
+        if (pV.t() != Value::T::STR || kV.t() != Value::T::STR)
+            throw VesnaError("-encrypt_file 需要路径与密钥字符串");
+        std::string path = pV.s();
+        if (!fileExists(path) || isDirectory(path)) throw VesnaError("-encrypt_file 文件不存在: " + path);
+        std::string raw;
+        {
+            std::error_code ec;
+            std::ifstream f(std::filesystem::u8path(path), std::ios::binary);
+            if (!f) throw VesnaError("-encrypt_file 无法读取: " + path);
+            raw.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+        }
+        std::string cipher = base64EncodeStr(aesEncryptCbc("VSENC1" + raw, kV.s()));
+        {
+            std::error_code ec;
+            std::ofstream f(std::filesystem::u8path(path), std::ios::binary | std::ios::trunc);
+            if (!f) throw VesnaError("-encrypt_file 无法写入: " + path);
+            f.write(cipher.data(), (std::streamsize)cipher.size());
+        }
+        return mkBool(true);
+    }
+    case 191: {  // -decrypt_file(path; key) 还原被 -encrypt_file 加密的文件
+        Value pV = ev(0), kV = ev(1);
+        if (pV.t() != Value::T::STR || kV.t() != Value::T::STR)
+            throw VesnaError("-decrypt_file 需要路径与密钥字符串");
+        std::string path = pV.s();
+        if (!fileExists(path) || isDirectory(path)) throw VesnaError("-decrypt_file 文件不存在: " + path);
+        std::string b64;
+        {
+            std::error_code ec;
+            std::ifstream f(std::filesystem::u8path(path), std::ios::binary);
+            if (!f) throw VesnaError("-decrypt_file 无法读取: " + path);
+            b64.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+        }
+        std::string raw = base64DecodeStr(b64);
+        if (raw.empty() && !b64.empty()) throw VesnaError("-decrypt_file 文件不是有效密文（base64 解码失败）");
+        std::string plain;
+        try {
+            plain = aesDecryptCbc(raw, kV.s());
+        } catch (VesnaError& e) {
+            throw VesnaError("-decrypt_file 解密失败（密钥错误或文件损坏）");
+        }
+        if (plain.size() < 6 || plain.compare(0, 6, "VSENC1") != 0)
+            throw VesnaError("-decrypt_file 解密失败（密钥错误或文件不是 Vesna 密文）");
+        plain.erase(0, 6);
+        {
+            std::error_code ec;
+            std::ofstream f(std::filesystem::u8path(path), std::ios::binary | std::ios::trunc);
+            if (!f) throw VesnaError("-decrypt_file 无法写入: " + path);
+            f.write(plain.data(), (std::streamsize)plain.size());
+        }
+        return mkBool(true);
+    }
+    case 192: {  // -encrypt_dir(dir; key) 递归加密目录下所有文件 -> 处理文件数
+        Value pV = ev(0), kV = ev(1);
+        if (pV.t() != Value::T::STR || kV.t() != Value::T::STR)
+            throw VesnaError("-encrypt_dir 需要目录与密钥字符串");
+        std::string dir = pV.s();
+        if (!isDirectory(dir)) throw VesnaError("-encrypt_dir 目录不存在: " + dir);
+        int64_t count = 0;
+        std::error_code ec;
+        for (auto& ent : std::filesystem::recursive_directory_iterator(
+                 std::filesystem::u8path(dir), std::filesystem::directory_options::skip_permission_denied, ec)) {
+            if (!ec && ent.is_regular_file()) {
+                std::string path = ent.path().string();
+                std::string raw;
+                {
+                    std::ifstream f(ent.path(), std::ios::binary);
+                    if (!f) continue;
+                    raw.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+                }
+                std::string cipher = base64EncodeStr(aesEncryptCbc("VSENC1" + raw, kV.s()));
+                {
+                    std::ofstream f(ent.path(), std::ios::binary | std::ios::trunc);
+                    if (!f) continue;
+                    f.write(cipher.data(), (std::streamsize)cipher.size());
+                }
+                ++count;
+            }
+        }
+        return mkInt(count);
+    }
+    case 193: {  // -decrypt_dir(dir; key) 递归解密目录下所有文件 -> 处理文件数
+        Value pV = ev(0), kV = ev(1);
+        if (pV.t() != Value::T::STR || kV.t() != Value::T::STR)
+            throw VesnaError("-decrypt_dir 需要目录与密钥字符串");
+        std::string dir = pV.s();
+        if (!isDirectory(dir)) throw VesnaError("-decrypt_dir 目录不存在: " + dir);
+        int64_t count = 0;
+        std::error_code ec;
+        for (auto& ent : std::filesystem::recursive_directory_iterator(
+                 std::filesystem::u8path(dir), std::filesystem::directory_options::skip_permission_denied, ec)) {
+            if (!ec && ent.is_regular_file()) {
+                std::string b64;
+                {
+                    std::ifstream f(ent.path(), std::ios::binary);
+                    if (!f) continue;
+                    b64.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+                }
+                std::string raw = base64DecodeStr(b64);
+                if (raw.empty() && !b64.empty()) continue;
+                std::string plain;
+                try {
+                    plain = aesDecryptCbc(raw, kV.s());
+                } catch (...) {
+                    continue;
+                }
+                if (plain.size() < 6 || plain.compare(0, 6, "VSENC1") != 0) continue;
+                plain.erase(0, 6);
+                {
+                    std::ofstream f(ent.path(), std::ios::binary | std::ios::trunc);
+                    if (!f) continue;
+                    f.write(plain.data(), (std::streamsize)plain.size());
+                }
+                ++count;
+            }
+        }
+        return mkInt(count);
     }
 
 
