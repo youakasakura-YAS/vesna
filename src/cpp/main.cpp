@@ -11,16 +11,23 @@
 namespace vesna {
 
 // Vesna 内置安装程序（C++ 版）
-static const char* INSTALL_SCRIPT = R"VES(
-/* Vesna 内置安装程序 */
+static const char* INSTALL_SCRIPT = R"VES(/* Vesna 内置安装程序（跨平台） */
+plat = #platform(),
+sep = "\\",
+exe = "vesna.exe",
+if plat != "windows"-
+-sep = "/",
+-exe = "vesna",
 
 src = #cwd(),
 /* 智能定位：在 bin 目录内运行时自动上溯到包根目录 */
-if #len(src) >= '5' and #sub(src; #len(src) - '3'; #len(src)) == "\\bin"-
+if #len(src) >= '5' and #sub(src; #len(src) - '3'; #len(src)) == sep + "bin"-
 -src = #sub(src; '1'; #len(src) - '4'),
 args = #args(),
 
 target = "C:\\Vesna",
+if plat != "windows"-
+-target = "/usr/local/vesna",
 if #len(args) >= '1'-
 -target = #path_clean(args['1']),
 
@@ -30,79 +37,109 @@ print("目标目录: " + target),
 print(""),
 
 print("[1/6] 检查源文件..."),
-prefix = #sub(target; '1'; '3'),
-if not #fexists(prefix)-
--print("错误: 盘符不存在 " + prefix),
+if plat == "windows"-
+-prefix = #sub(target; '1'; '3'),
+-if not #fexists(prefix)-
+--print("错误: 盘符不存在 " + prefix),
+--#exit('1'),
+if not #fexists(src + sep + "bin" + sep + exe)-
+-print("  错误: 找不到 bin" + sep + exe),
 -#exit('1'),
-if not #fexists(src + "\\bin\\vesna.exe")-
--print("  错误: 找不到 bin\\vesna.exe"),
--#exit('1'),
-if not #fexists(src + "\\lib\\csv.ves")-
--print("  错误: 找不到 lib\\csv.ves"),
+if not #fexists(src + sep + "lib" + sep + "csv.ves")-
+-print("  错误: 找不到 lib" + sep + "csv.ves"),
 -#exit('1'),
 print("  OK"),
 
 print("[2/6] 创建目录..."),
 #mkdir(target),
-#mkdir(target + "\\bin"),
-#mkdir(target + "\\lib"),
-#mkdir(target + "\\examples"),
-#mkdir(target + "\\docs"),
+#mkdir(target + sep + "bin"),
+#mkdir(target + sep + "lib"),
+#mkdir(target + sep + "examples"),
+#mkdir(target + sep + "docs"),
 print("  OK"),
 
 print("[3/6] 复制文件..."),
-#copy(src + "\\bin\\vesna.exe"; target + "\\bin\\vesna.exe"),
-if #fexists(src + "\\vesna.ico")-
--#copy(src + "\\vesna.ico"; target + "\\vesna.ico"),
-print("  vesna.exe"),
-files = #ls(src + "\\lib"),
+#copy(src + sep + "bin" + sep + exe; target + sep + "bin" + sep + exe),
+if #fexists(src + sep + "vesna.ico")-
+-#copy(src + sep + "vesna.ico"; target + sep + "vesna.ico"),
+print("  " + exe),
+files = #ls(src + sep + "lib"),
 for f in files-
--#copy(src + "\\lib\\" + f; target + "\\lib\\" + f),
-print("  lib\\ (" + #str(#len(files)) + " 个文件)"),
-files = #ls(src + "\\docs"),
+-#copy(src + sep + "lib" + sep + f; target + sep + "lib" + sep + f),
+print("  lib\ (" + #str(#len(files)) + " 个文件)"),
+files = #ls(src + sep + "docs"),
 for f in files-
--#copy(src + "\\docs\\" + f; target + "\\docs\\" + f),
-print("  docs\\ (" + #str(#len(files)) + " 个文件)"),
-files = #ls(src + "\\examples"),
+-#copy(src + sep + "docs" + sep + f; target + sep + "docs" + sep + f),
+print("  docs\ (" + #str(#len(files)) + " 个文件)"),
+files = #ls(src + sep + "examples"),
 for f in files-
--#copy(src + "\\examples\\" + f; target + "\\examples\\" + f),
-print("  examples\\ (" + #str(#len(files)) + " 个文件)"),
-if #fexists(src + "\\README.md")-
--#copy(src + "\\README.md"; target + "\\README.md"),
-if #fexists(src + "\\LICENSE")-
--#copy(src + "\\LICENSE"; target + "\\LICENSE"),
+-#copy(src + sep + "examples" + sep + f; target + sep + "examples" + sep + f),
+print("  examples\ (" + #str(#len(files)) + " 个文件)"),
+if #fexists(src + sep + "README.md")-
+-#copy(src + sep + "README.md"; target + sep + "README.md"),
+if #fexists(src + sep + "LICENSE")-
+-#copy(src + sep + "LICENSE"; target + sep + "LICENSE"),
 
 print("[4/6] 设置环境变量..."),
-#setenv("VESNA_HOME"; target),
-print("  VESNA_HOME = " + target),
-old_path = #regenv("PATH"),
-bin_path = target + "\\bin",
-if #find(old_path; bin_path) == '0'-
--#setenv("PATH"; old_path + ";" + bin_path),
--print("  PATH 已追加 " + bin_path),
+if plat == "windows"-
+-#setenv("VESNA_HOME"; target),
+-print("  VESNA_HOME = " + target),
+-old_path = #regenv("PATH"),
+-bin_path = target + sep + "bin",
+-if #find(old_path; bin_path) == '0'-
+--#setenv("PATH"; old_path + ";" + bin_path),
+--print("  PATH 已追加 " + bin_path),
+-else-
+--print("  PATH 已包含 " + bin_path),
 else-
--print("  PATH 已包含 " + bin_path),
+-hf = #getenv("HOME") + "/.bashrc",
+-if not #fexists(hf)-
+--hf = #getenv("HOME") + "/.zshrc",
+-if #fexists(hf)-
+--c = #fread(hf),
+--export_line = "export VESNA_HOME=\"" + target + "\"",
+--if #find(c; "VESNA_HOME") == '0'-
+---#fappend(hf; export_line),
+--if #find(c; target + sep + "bin") == '0'-
+---#fappend(hf; "export PATH=\"$PATH:" + target + sep + "bin\""),
+--print("  已写入 " + hf + "（请执行 source " + hf + " 生效）"),
+-else-
+--print("  未找到 ~/.bashrc 或 ~/.zshrc，请手动设置 VESNA_HOME 与 PATH"),
 print("[5/6] 注册文件关联..."),
-#regwrite("HKCU"; "Software\\Classes\\.ves"; ""; "VesnaScript"),
-#regwrite("HKCU"; "Software\\Classes\\.ves\\ShellNew"; "NullFile"; ""),
-#regwrite("HKCU"; "Software\\Classes\\VesnaScript"; ""; "Vesna 脚本"),
-#regwrite("HKCU"; "Software\\Classes\\VesnaScript\\DefaultIcon"; ""; target + "\\vesna.ico"),
-#regwrite("HKCU"; "Software\\Classes\\VesnaScript\\OpenWithProgids"; ""; ""),
-#regwrite("HKCU"; "Software\\Classes\\VesnaScript\\shell\\run"; ""; "用 Vesna 运行"),
-#regwrite("HKCU"; "Software\\Classes\\VesnaScript\\shell\\run\\command"; ""; "\"" + target + "\\bin\\vesna.exe\" \"%1\""),
-print("  OK"),
+if plat == "windows"-
+-#regwrite("HKCU"; "Software\\Classes\\.ves"; ""; "VesnaScript"),
+-#regwrite("HKCU"; "Software\\Classes\\.ves\\ShellNew"; "NullFile"; ""),
+-#regwrite("HKCU"; "Software\\Classes\\VesnaScript"; ""; "Vesna 脚本"),
+-#regwrite("HKCU"; "Software\\Classes\\VesnaScript\\DefaultIcon"; ""; target + "\\vesna.ico"),
+-#regwrite("HKCU"; "Software\\Classes\\VesnaScript\\OpenWithProgids"; ""; ""),
+-#regwrite("HKCU"; "Software\\Classes\\VesnaScript\\shell\\run"; ""; "用 Vesna 运行"),
+-#regwrite("HKCU"; "Software\\Classes\\VesnaScript\\shell\\run\\command"; ""; "\"" + target + "\\bin\\vesna.exe\" \"%1\""),
+-print("  OK"),
+else-
+-print("  POSIX 平台：请用 xdg-mime/系统文件关联自行注册 .ves"),
 print("[6/6] 安装完成"),
 print(""),
-print("请重开 cmd 后输入 vesna 测试。"),
+if plat == "windows"-
+-print("请重开 cmd 后输入 vesna 测试。"),
+else-
+-print("请执行 source ~/.bashrc 后输入 vesna 测试。"),
 )VES";
 
 // Vesna 内置卸载程序（C++ 版）：删注册表关联 + 清环境变量 + 删安装目录
-static const char* UNINSTALL_SCRIPT = R"VES(
-/* Vesna 内置卸载程序 */
+static const char* UNINSTALL_SCRIPT = R"VES(/* Vesna 内置卸载程序（跨平台） */
+plat = #platform(),
+sep = "\\",
+exe = "vesna.exe",
+if plat != "windows"-
+-sep = "/",
+-exe = "vesna",
 
 target = #getenv("VESNA_HOME"),
 if target == ""-
--target = "C:\\Vesna",
+-if plat == "windows"-
+--target = "C:\\Vesna",
+-else-
+--target = "/usr/local/vesna",
 args = #args(),
 if #len(args) >= '1'-
 -target = #path_clean(args['1']),
@@ -112,23 +149,38 @@ print("目标目录: " + target),
 print(""),
 
 print("[1/4] 删除文件关联..."),
-#regdelete("HKCU"; "Software\\Classes\\VesnaScript"),
-#regdelete("HKCU"; "Software\\Classes\\.ves"),
-print("  OK"),
+if plat == "windows"-
+-#regdelete("HKCU"; "Software\\Classes\\VesnaScript"),
+-#regdelete("HKCU"; "Software\\Classes\\.ves"),
+-print("  OK"),
+else-
+-print("  POSIX 平台：请用系统文件关联工具手动移除 .ves 关联"),
 
 print("[2/4] 清理环境变量..."),
-#shell("reg delete \"HKCU\\Environment\" /v VESNA_HOME /f"),
-bin_path = target + "\\bin",
-old_path = #regenv("PATH"),
-new_path = #replace(old_path; ";" + bin_path; ""),
-new_path = #replace(new_path; bin_path + ";"; ""),
-new_path = #replace(new_path; bin_path; ""),
-if new_path != old_path-
--#setenv("PATH"; new_path),
--print("  PATH 已移除 " + bin_path),
+if plat == "windows"-
+-#shell("reg delete \"HKCU\\Environment\" /v VESNA_HOME /f"),
+-old_path = #regenv("PATH"),
+-bin_path = target + sep + "bin",
+-new_path = #replace(old_path; ";" + bin_path; ""),
+-new_path = #replace(new_path; bin_path + ";"; ""),
+-new_path = #replace(new_path; bin_path; ""),
+-if new_path != old_path-
+--#setenv("PATH"; new_path),
+--print("  PATH 已移除 " + bin_path),
+-else-
+--print("  PATH 未包含 " + bin_path),
+-print("  OK"),
 else-
--print("  PATH 未包含 " + bin_path),
-print("  OK"),
+-hf = #getenv("HOME") + "/.bashrc",
+-if not #fexists(hf)-
+--hf = #getenv("HOME") + "/.zshrc",
+-if #fexists(hf)-
+--c = #fread(hf),
+--c = #replace(c; "export VESNA_HOME=\"" + target + "\""; ""),
+--c = #replace(c; "export PATH=\"$PATH:" + target + sep + "bin\""; ""),
+--#fwrite(hf; c),
+--print("  已从 " + hf + " 移除 VESNA_HOME/PATH"),
+-print("  OK"),
 
 print("[3/4] 删除安装目录..."),
 if #fexists(target)-
@@ -137,10 +189,6 @@ if #fexists(target)-
 else-
 -print("  目录不存在，跳过"),
 print("  OK"),
-
-print("[4/4] 卸载完成"),
-print(""),
-print("请重开 cmd 后生效。"),
 )VES";
 
 std::string formatSource(const std::string& src) {

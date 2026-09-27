@@ -134,12 +134,11 @@ inline int tcpPing(const std::string& host, int port) {
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <dlfcn.h>
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
 
 namespace vesna {
-
-// UUID v4 随机源（advapi32 SystemFunction036）
-extern "C" BOOLEAN NTAPI SystemFunction036(PVOID, ULONG);
-#define RtlGenRandom SystemFunction036
 
 inline std::wstring utf8ToWide(const std::string& s) {
     std::wstring out;
@@ -155,7 +154,26 @@ inline std::string wideToUtf8(const std::wstring& ws) {
     return out;
 }
 
-inline std::string exeDir() { return ""; }
+inline std::string exeDir() {
+    char buf[4096];
+#ifdef __APPLE__
+    uint32_t sz = (uint32_t)sizeof(buf);
+    if (_NSGetExecutablePath(buf, &sz) == 0) {
+        std::string p(buf);
+        size_t pos = p.find_last_of('/');
+        return pos == std::string::npos ? "." : p.substr(0, pos);
+    }
+#else
+    ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+    if (n > 0) {
+        buf[n] = '\0';
+        std::string p(buf);
+        size_t pos = p.find_last_of('/');
+        return pos == std::string::npos ? "." : p.substr(0, pos);
+    }
+#endif
+    return ".";
+}
 
 inline void setConsoleUtf8() {}
 

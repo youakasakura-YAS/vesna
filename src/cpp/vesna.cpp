@@ -13,6 +13,20 @@
 #include <cwchar>
 #include <direct.h>
 #include <filesystem>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#else
+#include <dirent.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#endif
 #include <functional>
 #include <fstream>
 #include <iostream>
@@ -280,8 +294,12 @@ static std::string toWindowsNewlines(const std::string& in) {
 }
 
 std::string readFileUtf8(const std::string& path) {
+#ifdef _WIN32
     std::wstring wp = utf8ToWide(path);
     FILE* f = _wfopen(wp.c_str(), L"rb");
+#else
+    FILE* f = fopen(path.c_str(), "rb");
+#endif
     if (!f) throw VesnaError("-fread 失败: 无法打开 " + path);
     std::string content;
     char buf[8192];
@@ -292,27 +310,45 @@ std::string readFileUtf8(const std::string& path) {
 }
 
 static void writeFileUtf8(const std::string& path, const std::string& content, bool append) {
+#ifdef _WIN32
     std::wstring wp = utf8ToWide(path);
     FILE* f = _wfopen(wp.c_str(), append ? L"ab" : L"wb");
+#else
+    FILE* f = fopen(path.c_str(), append ? "ab" : "wb");
+#endif
     if (!f) throw VesnaError("-fwrite 失败: 无法写入 " + path);
-    std::string out = toWindowsNewlines(content);
+    std::string out = content;
+#ifdef _WIN32
+    out = toWindowsNewlines(content);
+#endif
     fwrite(out.data(), 1, out.size(), f);
     fclose(f);
 }
 
 bool fileExists(const std::string& path) {
+#ifdef _WIN32
     std::wstring wp = utf8ToWide(path);
     DWORD attr = GetFileAttributesW(wp.c_str());
     return attr != INVALID_FILE_ATTRIBUTES;
+#else
+    struct stat st;
+    return stat(path.c_str(), &st) == 0;
+#endif
 }
 
 static bool isDirectory(const std::string& path) {
+#ifdef _WIN32
     std::wstring wp = utf8ToWide(path);
     DWORD attr = GetFileAttributesW(wp.c_str());
     return attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY);
+#else
+    struct stat st;
+    return stat(path.c_str(), &st) == 0 && S_ISDIR(st.st_mode);
+#endif
 }
 
 static void makeDirs(const std::string& path) {
+#ifdef _WIN32
     std::wstring wp = utf8ToWide(path);
     std::wstring cur;
     size_t i = 0;
@@ -329,10 +365,28 @@ static void makeDirs(const std::string& path) {
         if (j == std::wstring::npos) break;
         i = j + 1;
     }
+#else
+    if (path.empty()) return;
+    std::string cur;
+    size_t i = 0;
+    if (path[0] == '/') { cur = "/"; i = 1; }
+    while (i < path.size()) {
+        size_t j = path.find('/', i);
+        std::string part = path.substr(i, j == std::string::npos ? std::string::npos : j - i);
+        if (!part.empty()) {
+            if (!cur.empty() && cur.back() != '/') cur += '/';
+            cur += part;
+            mkdir(cur.c_str(), 0755);
+        }
+        if (j == std::string::npos) break;
+        i = j + 1;
+    }
+#endif
 }
 
 static std::vector<std::string> listDir(const std::string& path) {
     std::vector<std::string> out;
+#ifdef _WIN32
     std::wstring pattern = utf8ToWide(path);
     if (!pattern.empty() && pattern.back() != L'\\' && pattern.back() != L'/') pattern += L'\\';
     pattern += L'*';
@@ -344,11 +398,22 @@ static std::vector<std::string> listDir(const std::string& path) {
         if (name != L"." && name != L"..") out.push_back(wideToUtf8(name));
     } while (FindNextFileW(h, &fd));
     FindClose(h);
+#else
+    DIR* dir = opendir(path.c_str());
+    if (!dir) throw VesnaError("-ls 失败: 无法打开目录 " + path);
+    struct dirent* e;
+    while ((e = readdir(dir)) != nullptr) {
+        std::string name = e->d_name;
+        if (name != "." && name != "..") out.push_back(name);
+    }
+    closedir(dir);
+#endif
     std::sort(out.begin(), out.end());
     return out;
 }
 
 static void removeTree(const std::string& path) {
+#ifdef _WIN32
     std::wstring wp = utf8ToWide(path);
     DWORD attr = GetFileAttributesW(wp.c_str());
     if (attr == INVALID_FILE_ATTRIBUTES) return;
@@ -371,9 +436,20 @@ static void removeTree(const std::string& path) {
     } else {
         DeleteFileW(wp.c_str());
     }
+#else
+    struct stat st;
+    if (stat(path.c_str(), &st) != 0) return;
+    if (S_ISDIR(st.st_mode)) {
+        for (auto& name : listDir(path)) removeTree(path + "/" + name);
+        rmdir(path.c_str());
+    } else {
+        remove(path.c_str());
+    }
+#endif
 }
 
 static void copyPath(const std::string& src, const std::string& dst) {
+#ifdef _WIN32
     std::wstring ws = utf8ToWide(src), wd = utf8ToWide(dst);
     DWORD attr = GetFileAttributesW(ws.c_str());
     if (attr == INVALID_FILE_ATTRIBUTES) throw VesnaError("-copy 源不存在: " + src);
@@ -402,6 +478,19 @@ static void copyPath(const std::string& src, const std::string& dst) {
         if (!CopyFileW(ws.c_str(), wd.c_str(), FALSE))
             throw VesnaError("-copy 失败: " + src);
     }
+#else
+    struct stat st;
+    if (stat(src.c_str(), &st) != 0) throw VesnaError("-copy 源不存在: " + src);
+    if (S_ISDIR(st.st_mode)) {
+        mkdir(dst.c_str(), 0755);
+        for (auto& name : listDir(src)) copyPath(src + "/" + name, dst + "/" + name);
+    } else {
+        std::ifstream in(src, std::ios::binary);
+        std::ofstream out(dst, std::ios::binary);
+        if (!in) throw VesnaError("-copy 失败: " + src);
+        out << in.rdbuf();
+    }
+#endif
 }
 
 // glob：目录 + 通配符匹配
@@ -3514,8 +3603,13 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
         Value s = ev(0), d = ev(1);
         if (s.t() != Value::T::STR || d.t() != Value::T::STR)
             throw VesnaError("-rename 参数需要字符串");
+#ifdef _WIN32
         if (!MoveFileW(utf8ToWide(s.s()).c_str(), utf8ToWide(d.s()).c_str()))
             throw VesnaError("-rename 失败: " + s.s());
+#else
+        if (::rename(s.s().c_str(), d.s().c_str()) != 0)
+            throw VesnaError("-rename 失败: " + s.s());
+#endif
         return mkNone();
     }
     case 68: {
@@ -4021,20 +4115,32 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
     case 128: {
         Value p = ev(0);
         if (p.t() != Value::T::STR) throw VesnaError("-fremove 需要字符串");
-        if (fileExists(p.s())) DeleteFileW(utf8ToWide(p.s()).c_str());
+        if (fileExists(p.s())) {
+#ifdef _WIN32
+            DeleteFileW(utf8ToWide(p.s()).c_str());
+#else
+            remove(p.s().c_str());
+#endif
+        }
         return mkNone();
     }
     case 129: {
         Value s = ev(0), d = ev(1);
         if (s.t() != Value::T::STR || d.t() != Value::T::STR) throw VesnaError("-fmove 参数需要字符串");
         if (!fileExists(s.s())) throw VesnaError("-fmove 源不存在: " + s.s());
+#ifdef _WIN32
         if (!MoveFileW(utf8ToWide(s.s()).c_str(), utf8ToWide(d.s()).c_str()))
             throw VesnaError("-fmove 失败: " + s.s());
+#else
+        if (::rename(s.s().c_str(), d.s().c_str()) != 0)
+            throw VesnaError("-fmove 失败: " + s.s());
+#endif
         return mkNone();
     }
     case 130: {
         Value p = ev(0);
         if (p.t() != Value::T::STR) throw VesnaError("-fsize 需要字符串");
+#ifdef _WIN32
         WIN32_FILE_ATTRIBUTE_DATA info;
         if (!GetFileAttributesExW(utf8ToWide(p.s()).c_str(), GetFileExInfoStandard, &info))
             throw VesnaError("-fsize 无法访问: " + p.s());
@@ -4042,6 +4148,12 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
         sz.LowPart = info.nFileSizeLow;
         sz.HighPart = info.nFileSizeHigh;
         return mkInt((int64_t)sz.QuadPart);
+#else
+        struct stat st;
+        if (stat(p.s().c_str(), &st) != 0)
+            throw VesnaError("-fsize 无法访问: " + p.s());
+        return mkInt((int64_t)st.st_size);
+#endif
     }
     case 131: {
         Value p = ev(0);
@@ -4712,7 +4824,7 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
         setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt));
         struct sockaddr_in addr;
         addr.sin_family = AF_INET;
-        addr.sin_port = htons((u_short)port);
+        addr.sin_port = htons((unsigned short)port);
         addr.sin_addr.s_addr = INADDR_ANY;
         if (bind(srv, (struct sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) {
             closesocket(srv); WSACleanup();
@@ -4724,6 +4836,24 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
         for (;;) {
             SOCKET cli = accept(srv, nullptr, nullptr);
             if (cli == INVALID_SOCKET) continue;
+#else
+        int srv = socket(AF_INET, SOCK_STREAM, 0);
+        if (srv < 0) throw VesnaError("-http_server 无法创建套接字");
+        int opt = 1;
+        setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+        struct sockaddr_in addr;
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons((unsigned short)port);
+        addr.sin_addr.s_addr = INADDR_ANY;
+        if (bind(srv, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
+            close(srv);
+            throw VesnaError("-http_server 绑定失败: 端口 " + std::to_string(port) + " 被占用?");
+        }
+        if (listen(srv, 8) != 0) { close(srv); throw VesnaError("-http_server listen 失败"); }
+        for (;;) {
+            int cli = accept(srv, nullptr, nullptr);
+            if (cli < 0) continue;
+#endif
             std::string raw;
             char buf[4096];
             bool headerDone = false;
@@ -4806,9 +4936,12 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
                 + "Content-Length: " + std::to_string(respBody.size()) + "\r\n"
                 + "Connection: close\r\n\r\n" + respBody;
             send(cli, resp.data(), (int)resp.size(), 0);
+#ifdef _WIN32
             closesocket(cli);
-        }
+#else
+            close(cli);
 #endif
+        }
         return mkNone();
     }
     case 181: {  // -file_time(path) 文件修改时间戳（秒）
