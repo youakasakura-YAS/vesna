@@ -2865,7 +2865,7 @@ static bool xmlParse(const std::string& s, XmlNode& root) {
 // ============================================================
 Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr<Expr>>& args,
                       const std::shared_ptr<Env>& env) {
-    auto ev = [&](size_t i) -> Value { return eval(args[i], env); };
+    auto ev = [&](size_t i) -> Value { return i < args.size() ? eval(args[i], env) : mkNone(); };
     auto argc = [&]() -> size_t { return args.size(); };
     static const std::unordered_map<std::string, int> g_bi = []{
         std::unordered_map<std::string, int> m;
@@ -2897,10 +2897,18 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
         }
     }
     case 4: {
-        Value s = ev(0), st = ev(1), en = ev(2);
+        Value s = ev(0), st = ev(1);
         if (s.t() != Value::T::STR) throw VesnaError("-sub 第一个参数需要字符串");
-        if (st.t() != Value::T::INT || en.t() != Value::T::INT) throw VesnaError("-sub 下标需要整数");
-        int64_t a = st.i() - 1, b = en.i();
+        if (st.t() != Value::T::INT) throw VesnaError("-sub 下标需要整数");
+        int64_t b;
+        if (argc() > 2) {
+            Value en = ev(2);
+            if (en.t() != Value::T::INT) throw VesnaError("-sub 下标需要整数");
+            b = en.i();
+        } else {
+            b = (int64_t)s.s().size();
+        }
+        int64_t a = st.i() - 1;
         if (a < 0) a = 0;
         if (a > (int64_t)s.s().size()) a = (int64_t)s.s().size();
         if (b < a) b = a;
@@ -2942,12 +2950,15 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
     case 7: {
         Value s = ev(0), sub = ev(1);
         if (s.t() != Value::T::STR) throw VesnaError("-find 需要字符串");
+        if (sub.t() != Value::T::STR) throw VesnaError("-find 第二个参数需要字符串");
         size_t i = s.s().find(sub.s());
         return mkInt(i == std::string::npos ? 0 : (int64_t)i + 1);
     }
     case 8: {
         Value s = ev(0), oldv = ev(1), newv = ev(2);
         if (s.t() != Value::T::STR) throw VesnaError("-replace 第一个参数需要字符串");
+        if (oldv.t() != Value::T::STR) throw VesnaError("-replace 第二个参数需要字符串");
+        if (newv.t() != Value::T::STR) throw VesnaError("-replace 第三个参数需要字符串");
         std::string out = s.s();
         size_t pos = 0;
         while ((pos = out.find(oldv.s(), pos)) != std::string::npos) {
@@ -3108,14 +3119,22 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
         return out;
     }
     case 34: {
-        Value lst = ev(0), st = ev(1), en = ev(2);
+        Value lst = ev(0), st = ev(1);
         if (lst.t() != Value::T::LIST && lst.t() != Value::T::GROUP && lst.t() != Value::T::STR)
             throw VesnaError("-slice 第一个参数需要列表/组/字符串");
-        if (st.t() != Value::T::INT || en.t() != Value::T::INT) throw VesnaError("-slice 下标需要整数");
+        if (st.t() != Value::T::INT) throw VesnaError("-slice 下标需要整数");
         size_t size = lst.t() == Value::T::STR ? lst.s().size()
                      : lst.t() == Value::T::LIST ? lst.list()->items.size()
                                                : lst.group()->items.size();
-        int64_t a = st.i() - 1, b = en.i();
+        int64_t b;
+        if (argc() > 2) {
+            Value en = ev(2);
+            if (en.t() != Value::T::INT) throw VesnaError("-slice 下标需要整数");
+            b = en.i();
+        } else {
+            b = (int64_t)size;
+        }
+        int64_t a = st.i() - 1;
         if (a < 0) a = 0;
         if (a > (int64_t)size) a = (int64_t)size;
         if (b < a) b = a;
@@ -3242,6 +3261,8 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
     case 41: {
         Value s = ev(0), pat = ev(1), repl = ev(2);
         if (s.t() != Value::T::STR) throw VesnaError("-gsub 第一个参数需要字符串");
+        if (pat.t() != Value::T::STR) throw VesnaError("-gsub 第二个参数需要字符串");
+        if (repl.t() != Value::T::STR) throw VesnaError("-gsub 第三个参数需要字符串");
         if (isRegexSafeLiteral(pat.s()) && repl.s().find('\\') == std::string::npos &&
             repl.s().find('$') == std::string::npos) {
             std::string out = s.s();
