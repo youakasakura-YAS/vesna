@@ -1,0 +1,39 @@
+/* 2.4 新内置测试：crc32 / adler32 / thread_id / 信号量 */
+ok = ['0'], fail = ['0'],
+def t(name; cond)-
+-if cond-
+--ok['1'] = ok['1'] + '1',
+--print("PASS " + name),
+-else-
+--fail['1'] = fail['1'] + '1',
+--print("FAIL " + name),
+
+/* CRC32 标准校验向量：123456789 -> cbf43926 */
+t("crc32 vector"; #crc32("123456789") == "cbf43926"),
+t("crc32 empty"; #crc32("") == "00000000"),
+/* Adler-32 参考值：abc -> 024d0127；Wikipedia -> 11e60398 */
+t("adler32 abc"; #adler32("abc") == "024d0127"),
+t("adler32 wikipedia"; #adler32("Wikipedia") == "11e60398"),
+t("adler32 empty"; #adler32("") == "00000001"),
+/* 字节列表模式（配 #bin_read） */
+t("crc32 bytes"; #type(#crc32(#bin_read("F:/Vesna/examples/csv2json.ves"))) == "str"),
+
+/* thread_id：返回整数且两次调用一致 */
+tid = #thread_id(),
+t("thread_id int"; #type(tid) == "int"),
+t("thread_id stable"; tid == #thread_id()),
+
+/* 信号量：初值 1 直接 wait 通过 */
+s = #sem_open('1'),
+t("sem_open int"; #type(s) == "int"),
+#sem_wait(s),
+t("sem_wait after init 1"; true),
+#sem_post(s),
+#sem_wait(s),
+t("sem_wait after post"; true),
+#sem_close(s),
+t("sem_close done"; true),
+
+print("ok=" + #str(ok['1']) + " fail=" + #str(fail['1'])),
+if fail['1'] > '0'-
+-#exit('1'),

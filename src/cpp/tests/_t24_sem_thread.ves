@@ -1,0 +1,22 @@
+/* 2.4 信号量跨线程同步测试 */
+sem = #sem_open('0'),
+done = ['0'],
+def worker()-
+-#sem_wait(sem),
+-done['1'] = '1',
+-print("worker 放行"),
+
+#thread(worker),
+#sleep('100'),
+print("主线程: worker 应仍阻塞"),
+if done['1'] == '0'-
+-print("PASS worker blocked before post"),
+else-
+-print("FAIL worker 未阻塞"),
+#sem_post(sem),
+#sleep('100'),
+if done['1'] == '1'-
+-print("PASS worker resumed after post"),
+else-
+-print("FAIL worker 未恢复"),
+#sem_close(sem),

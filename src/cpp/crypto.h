@@ -264,4 +264,46 @@ inline std::string aesDecryptCbc(const std::string& data, const std::string& key
 
 }  // namespace vesna
 
+// ============================================================
+// CRC32（IEEE 802.3，多项式 0xEDB88320）与 Adler-32（RFC 1950）
+// ============================================================
+inline uint32_t crc32(const uint8_t* data, size_t len) {
+    static uint32_t table[256];
+    static bool init = false;
+    if (!init) {
+        for (uint32_t i = 0; i < 256; ++i) {
+            uint32_t c = i;
+            for (int k = 0; k < 8; ++k)
+                c = (c & 1) ? 0xEDB88320u ^ (c >> 1) : (c >> 1);
+            table[i] = c;
+        }
+        init = true;
+    }
+    uint32_t crc = 0xFFFFFFFFu;
+    for (size_t i = 0; i < len; ++i)
+        crc = table[(crc ^ data[i]) & 0xFF] ^ (crc >> 8);
+    return crc ^ 0xFFFFFFFFu;
+}
+
+inline std::string crc32Hex(const std::string& in) {
+    char out[9];
+    std::snprintf(out, 9, "%08x", crc32((const uint8_t*)in.data(), in.size()));
+    return std::string(out);
+}
+
+inline uint32_t adler32(const uint8_t* data, size_t len) {
+    uint32_t a = 1, b = 0;
+    for (size_t i = 0; i < len; ++i) {
+        a = (a + data[i]) % 65521u;
+        b = (b + a) % 65521u;
+    }
+    return (b << 16) | a;
+}
+
+inline std::string adler32Hex(const std::string& in) {
+    char out[9];
+    std::snprintf(out, 9, "%08x", adler32((const uint8_t*)in.data(), in.size()));
+    return std::string(out);
+}
+
 #endif  // VESNA_CRYPTO_H

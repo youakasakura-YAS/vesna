@@ -19,6 +19,7 @@
 #endif
 #else
 #include <dirent.h>
+#include <semaphore.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -1997,6 +1998,22 @@ static ThreadTable g_threads;
 static std::mutex g_out_mutex;                 // print 输出锁
 static std::unordered_map<std::string, std::mutex*> g_locks;   // 命名互斥锁
 static std::mutex g_locks_m;
+struct SemTable {                              // 命名信号量表（2.4）
+    std::mutex m;
+    std::unordered_map<int64_t, void*> sems;   // Windows: HANDLE; POSIX: sem_t*
+    int64_t next_id = 1;
+    ~SemTable() {
+        std::lock_guard<std::mutex> lk(m);
+        for (auto& kv : sems) {
+#ifdef _WIN32
+            if (kv.second) CloseHandle((HANDLE)kv.second);
+#else
+            if (kv.second) { sem_destroy((sem_t*)kv.second); delete (sem_t*)kv.second; }
+#endif
+        }
+    }
+};
+static SemTable g_sems;
 Value Interp::call(const std::string& name, int64_t nid, const std::vector<std::shared_ptr<Expr>>& args,
                    const std::shared_ptr<Env>& env) {
     if (name == "print") {
@@ -2742,7 +2759,8 @@ const std::vector<std::pair<std::string, int>> g_builtinNames = {
     {"date_format",177},{"parse_time",178},{"uuid",179},{"http_server",180},{"file_time",181},{"truncate",182},{"arch",183},
     {"tcp_connect",184},{"tcp_listen",185},{"tcp_accept",186},{"tcp_send",187},{"tcp_recv",188},{"tcp_close",189},
     {"encrypt_file",190},{"decrypt_file",191},{"encrypt_dir",192},{"decrypt_dir",193},
-    {"udp_open",194},{"udp_send",195},{"udp_recv",196},{"udp_close",197},{"dns_lookup",198}
+    {"udp_open",194},{"udp_send",195},{"udp_recv",196},{"udp_close",197},{"dns_lookup",198},
+    {"thread_id",199},{"sem_open",200},{"sem_wait",201},{"sem_post",202},{"sem_close",203},{"crc32",204},{"adler32",205}
 };
 
 
@@ -5370,7 +5388,112 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
         }
         return l;
     }
-
+    case 199: {  // -thread_id() -> 当前线程 ID（跨平台）
+        std::hash<std::thread::id> h;
+        return mkInt((int64_t)h(std::this_thread::get_id()));
+    }
+    case 200: {  // -sem_open(value=1) -> 信号量句柄
+        Value v = ev(0);
+        long init = 1;
+        if (v.t() == Value::T::INT) init = (long)v.i();
+        else if (v.t() != Value::T::NONE) throw VesnaError("-sem_open 需要整数初值或省略");
+        int64_t id;
+#ifdef _WIN32
+        HANDLE h = CreateSemaphoreW(NULL, (LONG)init, 0x7FFFFFFFL, NULL);
+        if (!h) throw VesnaError("-sem_open 创建信号量失败");
+        {
+            std::lock_guard<std::mutex> lk(g_sems.m);
+            id = g_sems.next_id++;
+            g_sems.sems[id] = (void*)h;
+        }
+#else
+        sem_t* sem = new sem_t();
+        if (sem_init(sem, 0, (unsigned int)init) != 0) { delete sem; throw VesnaError("-sem_open 创建信号量失败"); }
+        {
+            std::lock_guard<std::mutex> lk(g_sems.m);
+            id = g_sems.next_id++;
+            g_sems.sems[id] = (void*)sem;
+        }
+#endif
+        return mkInt(id);
+    }
+    case 201: {  // -sem_wait(sem) 阻塞 P 操作
+        Value sV = ev(0);
+        if (sV.t() != Value::T::INT) throw VesnaError("-sem_wait 需要信号量句柄整数");
+        void* h;
+        {
+            std::lock_guard<std::mutex> lk(g_sems.m);
+            auto it = g_sems.sems.find(sV.i());
+            if (it == g_sems.sems.end()) throw VesnaError("-sem_wait 无效信号量句柄");
+            h = it->second;
+        }
+#ifdef _WIN32
+        WaitForSingleObject((HANDLE)h, INFINITE);
+#else
+        sem_wait((sem_t*)h);
+#endif
+        return mkNone();
+    }
+    case 202: {  // -sem_post(sem) 非阻塞 V 操作
+        Value sV = ev(0);
+        if (sV.t() != Value::T::INT) throw VesnaError("-sem_post 需要信号量句柄整数");
+        void* h;
+        {
+            std::lock_guard<std::mutex> lk(g_sems.m);
+            auto it = g_sems.sems.find(sV.i());
+            if (it == g_sems.sems.end()) throw VesnaError("-sem_post 无效信号量句柄");
+            h = it->second;
+        }
+#ifdef _WIN32
+        ReleaseSemaphore((HANDLE)h, 1, nullptr);
+#else
+        sem_post((sem_t*)h);
+#endif
+        return mkNone();
+    }
+    case 203: {  // -sem_close(sem) 销毁
+        Value sV = ev(0);
+        if (sV.t() != Value::T::INT) throw VesnaError("-sem_close 需要信号量句柄整数");
+        {
+            std::lock_guard<std::mutex> lk(g_sems.m);
+            auto it = g_sems.sems.find(sV.i());
+            if (it == g_sems.sems.end()) throw VesnaError("-sem_close 无效信号量句柄");
+#ifdef _WIN32
+            CloseHandle((HANDLE)it->second);
+#else
+            sem_destroy((sem_t*)it->second);
+            delete (sem_t*)it->second;
+#endif
+            g_sems.sems.erase(it);
+        }
+        return mkNone();
+    }
+    case 204: {  // -crc32(data) -> 8 位十六进制（字符串或字节列表）
+        Value s = ev(0);
+        if (s.t() == Value::T::LIST) {
+            std::string bytes;
+            for (auto& b : s.list()->items) {
+                if (b.t() != Value::T::INT) throw VesnaError("-crc32 列表须为字节整数");
+                bytes.push_back((char)b.i());
+            }
+            return mkStr(crc32Hex(bytes));
+        }
+        if (s.t() != Value::T::STR) throw VesnaError("-crc32 需要字符串或字节列表");
+        return mkStr(crc32Hex(s.s()));
+    }
+    case 205: {  // -adler32(data) -> 8 位十六进制（字符串或字节列表）
+        Value s = ev(0);
+        if (s.t() == Value::T::LIST) {
+            std::string bytes;
+            for (auto& b : s.list()->items) {
+                if (b.t() != Value::T::INT) throw VesnaError("-adler32 列表须为字节整数");
+                bytes.push_back((char)b.i());
+            }
+            return mkStr(adler32Hex(bytes));
+        }
+        if (s.t() != Value::T::STR) throw VesnaError("-adler32 需要字符串或字节列表");
+        return mkStr(adler32Hex(s.s()));
+    }
 
     }
     throw VesnaError("未知内置 -" + name);
