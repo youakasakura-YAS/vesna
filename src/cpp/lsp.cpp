@@ -391,6 +391,76 @@ std::string renameJson(const std::string& uri, const std::string& text, int line
     return out;
 }
 
+// textDocument/references：文档内查找标识符所有引用位置（跳过注释与字符串字面量）
+std::string referencesJson(const std::string& uri, const std::string& text, int line, int character) {
+    auto lines = splitLines(text);
+    if (line < 0 || line >= (int)lines.size()) return "null";
+    const std::string& lineText = lines[(size_t)line];
+    std::string left = lineText.substr(0, (size_t)std::max(0, character));
+    std::string right = lineText.substr((size_t)std::max(0, character));
+    std::regex wordReL(R"([a-zA-Z_][a-zA-Z0-9_]*$)");
+    std::smatch ml;
+    std::string word;
+    std::regex wordReR(R"(^[a-zA-Z0-9_]*)");
+    std::smatch mr;
+    if (std::regex_search(left, ml, wordReL)) {
+        word = ml.str();
+        if (std::regex_search(right, mr, wordReR)) word += mr.str();
+    } else {
+        std::regex wordReStart(R"(^[a-zA-Z_][a-zA-Z0-9_]*)");
+        if (!std::regex_search(right, ml, wordReStart)) return "null";
+        word = ml.str();
+    }
+    if (word.empty() || word[0] == '#') return "null";
+    std::string out = "[";
+    bool first = true;
+    for (size_t i = 0; i < lines.size(); ++i) {
+        std::string l = lines[i];
+        size_t c0 = l.find("/*");
+        if (c0 != std::string::npos) {
+            size_t c1 = l.find("*/", c0);
+            l = (c1 != std::string::npos) ? l.substr(0, c0) + l.substr(c1 + 2) : l.substr(0, c0);
+        }
+        bool inStr = false;
+        for (size_t q = 0; q < l.size();) {
+            char ch = l[q];
+            if (inStr) {
+                if (ch == '\\') { q += 2; continue; }
+                if (ch == '"') inStr = false;
+                ++q;
+                continue;
+            }
+            if (ch == '"') { inStr = true; ++q; continue; }
+            if (isalpha((unsigned char)ch) || ch == '_') {
+                size_t r = q;
+                while (r < l.size() && (isalnum((unsigned char)l[r]) || l[r] == '_')) ++r;
+                if (l.substr(q, r - q) == word) {
+                    if (!first) out += ",";
+                    first = false;
+                    out += "{\"uri\":" + jsonEscape(uri) +
+                           ",\"range\":{\"start\":{\"line\":" + std::to_string((int)i) +
+                           ",\"character\":" + std::to_string((int)q) +
+                           "},\"end\":{\"line\":" + std::to_string((int)i) +
+                           ",\"character\":" + std::to_string((int)r) + "}}}";
+                }
+                q = r;
+                continue;
+            }
+            ++q;
+        }
+    }
+    out += "]";
+    return out;
+}
+
+// textDocument/formatting：整文档替换为 formatSource 结果
+std::string formatJson(const std::string& text) {
+    std::string out = formatSource(text);
+    return "[{\"range\":{\"start\":{\"line\":0,\"character\":0},"
+           "\"end\":{\"line\":" + std::to_string((int)splitLines(text).size()) + ",\"character\":0}},"
+           "\"newText\":" + jsonEscape(out) + "}]";
+}
+
 // workspace/symbol：跨文档 def 符号
 std::string workspaceSymbolsJson() {
     std::string out = "[";
@@ -692,11 +762,11 @@ void runLsp() {
                 "\"textDocumentSync\":1,"
                 "\"completionProvider\":{\"triggerCharacters\":[\"#\"]},"
                 "\"hoverProvider\":true,\"codeActionProvider\":true,"
-                "\"documentSymbolProvider\":true,\"foldingRangeProvider\":true,"
+                "\"documentSymbolProvider\":true,\"foldingRangeProvider\":true,\"documentFormattingProvider\":true,\"referencesProvider\":true,"
                 "\"definitionProvider\":true,\"renameProvider\":true,"
                 "\"signatureHelpProvider\":{\"triggerCharacters\":[\"(\"]},"
                 "\"workspaceSymbolProvider\":true},"
-                "\"serverInfo\":{\"name\":\"vesna-lsp\",\"version\":\"2.0.0\"}}";
+                "\"serverInfo\":{\"name\":\"vesna-lsp\",\"version\":\"2.5.0\"}}";
             sendResponse(id, res);
         }
         else if (method == "initialized") {
@@ -772,6 +842,19 @@ void runLsp() {
             int64_t character = jsonFindInt(body, "character", posLine);
             auto it = g_docs.find(uri);
             sendResponse(id, signatureHelpJson(it != g_docs.end() ? it->second.text : "", (int)line, (int)character));
+        }
+        else if (method == "textDocument/references") {
+            std::string uri = jsonFind(body, "uri");
+            size_t posLine = body.find("\"position\"");
+            int64_t line = jsonFindInt(body, "line", posLine);
+            int64_t character = jsonFindInt(body, "character", posLine);
+            auto it = g_docs.find(uri);
+            sendResponse(id, referencesJson(uri, it != g_docs.end() ? it->second.text : "", (int)line, (int)character));
+        }
+        else if (method == "textDocument/formatting") {
+            std::string uri = jsonFind(body, "uri");
+            auto it = g_docs.find(uri);
+            sendResponse(id, formatJson(it != g_docs.end() ? it->second.text : ""));
         }
         else if (method == "workspace/symbol") {
             sendResponse(id, workspaceSymbolsJson());

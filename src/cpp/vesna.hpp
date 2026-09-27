@@ -218,6 +218,8 @@ std::vector<Line> preprocess(const std::string& src);
 extern const std::vector<std::pair<std::string, int>> g_builtinNames;
 // 原生 LSP 服务器（vesna.exe --lsp，stdio JSON-RPC）
 void runLsp();
+// 行级格式化（--fmt / LSP textDocument/formatting 共用，定义于 main.cpp）
+std::string formatSource(const std::string& src);
 
 // ============================================================
 // 解析
