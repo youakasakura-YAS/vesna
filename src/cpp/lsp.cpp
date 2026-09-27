@@ -192,6 +192,33 @@ std::string completionJson(const std::string& text) {
     return out;
 }
 
+// ---------- 符号 / 定义收集 ----------
+
+struct SymLoc {
+    std::string name;
+    int line;
+    int len;
+};
+
+std::vector<SymLoc> collectDefs(const std::string& text) {
+    std::vector<SymLoc> out;
+    auto lines = splitLines(text);
+    std::regex defRe(R"(^\s*def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:\(|-))");
+    std::regex assignRe(R"(^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*=(?!=))");
+    for (size_t i = 0; i < lines.size(); ++i) {
+        std::smatch m;
+        if (std::regex_search(lines[i], m, defRe))
+            out.push_back({m.str(1), (int)i, (int)lines[i].size()});
+        else if (std::regex_search(lines[i], m, assignRe)) {
+            std::string nm = m.str(1);
+            bool kw = false;
+            for (auto& k : LSP_KEYWORDS) if (k.first == nm) { kw = true; break; }
+            if (!kw) out.push_back({nm, (int)i, (int)lines[i].size()});
+        }
+    }
+    return out;
+}
+
 // ---------- 悬停 ----------
 
 std::string hoverJson(const std::string& text, int line, int character) {
@@ -200,11 +227,22 @@ std::string hoverJson(const std::string& text, int line, int character) {
     const std::string& lineText = lines[(size_t)line];
     if (character < 0) character = 0;
     std::string left = lineText.substr(0, (size_t)character);
+    std::string right = lineText.substr((size_t)character);
 
     std::regex wordRe(R"([a-zA-Z_#][a-zA-Z0-9_#]*$)");
     std::smatch m;
-    if (!std::regex_search(left, m, wordRe)) return "null";
-    std::string word = m.str();
+    std::string word;
+    std::regex wordReR(R"(^[a-zA-Z0-9_#]*)");
+    std::smatch mr;
+    if (std::regex_search(left, m, wordRe)) {
+        word = m.str();
+        if (std::regex_search(right, mr, wordReR)) word += mr.str();
+    } else {
+        // 光标恰在词首：从右侧取词
+        std::regex wordReStart(R"(^[a-zA-Z_#][a-zA-Z0-9_#]*)");
+        if (!std::regex_search(right, m, wordReStart)) return "null";
+        word = m.str();
+    }
 
     std::string md;
     bool found = false;
@@ -228,10 +266,14 @@ std::string hoverJson(const std::string& text, int line, int character) {
             if (k.first == word) { md = k.second; found = true; break; }
         }
         if (!found) {
-            std::regex defRe(R"(^\s*def\s+)" + word + R"(\b)");
-            if (std::regex_search(lineText, defRe)) {
-                md = "函数 `" + word + "`：" + lineText;
-                found = true;
+            auto allLines = splitLines(text);
+            for (auto& s : collectDefs(text)) {
+                if (s.name == word) {
+                    std::string srcLine = (s.line < (int)allLines.size()) ? allLines[(size_t)s.line] : "";
+                    md = "定义于第 " + std::to_string(s.line + 1) + " 行：" + srcLine;
+                    found = true;
+                    break;
+                }
             }
         }
     }
@@ -248,24 +290,6 @@ std::string hoverJson(const std::string& text, int line, int character) {
 
 // ---------- 符号 / 折叠 ----------
 
-struct SymLoc {
-    std::string name;
-    int line;
-    int len;
-};
-
-std::vector<SymLoc> collectDefs(const std::string& text) {
-    std::vector<SymLoc> out;
-    auto lines = splitLines(text);
-    std::regex defRe(R"(^\s*def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:\(|-))");
-    for (size_t i = 0; i < lines.size(); ++i) {
-        std::smatch m;
-        if (std::regex_search(lines[i], m, defRe))
-            out.push_back({m.str(1), (int)i, (int)lines[i].size()});
-    }
-    return out;
-}
-
 // textDocument/definition：标识符 -> def 行
 std::string definitionJson(const std::string& uri, const std::string& text, int line, int character) {
     auto lines = splitLines(text);
@@ -275,21 +299,96 @@ std::string definitionJson(const std::string& uri, const std::string& text, int 
     std::string right = lineText.substr((size_t)std::max(0, character));
     std::regex wordReL(R"([a-zA-Z_][a-zA-Z0-9_]*$)");
     std::smatch ml;
-    if (!std::regex_search(left, ml, wordReL)) return "null";
-    std::string word = ml.str();
+    std::string word;
     std::regex wordReR(R"(^[a-zA-Z0-9_]*)");
     std::smatch mr;
-    if (std::regex_search(right, mr, wordReR)) word += mr.str();
+    if (std::regex_search(left, ml, wordReL)) {
+        word = ml.str();
+        if (std::regex_search(right, mr, wordReR)) word += mr.str();
+    } else {
+        // 光标恰在词首：从右侧取词
+        std::regex wordReStart(R"(^[a-zA-Z_][a-zA-Z0-9_]*)");
+        if (!std::regex_search(right, ml, wordReStart)) return "null";
+        word = ml.str();
+    }
     if (!word.empty() && word[0] == '#') return "null";  // 内置无源码定义
     for (auto& s : collectDefs(text)) {
         if (s.name == word) {
             std::string out = "[{\"uri\":" + jsonEscape(uri) + ",";
             out += "\"range\":{\"start\":{\"line\":" + std::to_string(s.line) + ",\"character\":0},";
-            out += "\"end\":{\"line\":" + std::to_string(s.line) + ",\"character\":" + std::to_string(s.len) + "}}}";
+            out += "\"end\":{\"line\":" + std::to_string(s.line) + ",\"character\":" + std::to_string(s.len) + "}}}]";
             return out;
         }
     }
     return "null";
+}
+
+// textDocument/rename：文档内重命名标识符（跳过注释与字符串字面量）
+std::string renameJson(const std::string& uri, const std::string& text, int line, int character,
+                       const std::string& newName) {
+    auto lines = splitLines(text);
+    if (line < 0 || line >= (int)lines.size()) return "null";
+    const std::string& lineText = lines[(size_t)line];
+    std::string left = lineText.substr(0, (size_t)std::max(0, character));
+    std::string right = lineText.substr((size_t)std::max(0, character));
+    std::regex wordReL(R"([a-zA-Z_][a-zA-Z0-9_]*$)");
+    std::smatch ml;
+    std::string word;
+    std::regex wordReR(R"(^[a-zA-Z0-9_]*)");
+    std::smatch mr;
+    if (std::regex_search(left, ml, wordReL)) {
+        word = ml.str();
+        if (std::regex_search(right, mr, wordReR)) word += mr.str();
+    } else {
+        // 光标恰在词首：从右侧取词
+        std::regex wordReStart(R"(^[a-zA-Z_][a-zA-Z0-9_]*)");
+        if (!std::regex_search(right, ml, wordReStart)) return "null";
+        word = ml.str();
+    }
+    if (word.empty() || word[0] == '#') return "null";  // 内置不可重命名
+    for (auto& k : LSP_KEYWORDS) if (k.first == word) return "null";  // 关键字不可重命名
+    std::regex nameRe(R"(^[a-zA-Z_][a-zA-Z0-9_]*$)");
+    if (!std::regex_match(newName, nameRe) || newName == word) return "null";
+
+    std::string out = "{\"changes\":{\"" + uri + "\":[";
+    bool first = true;
+    for (size_t i = 0; i < lines.size(); ++i) {
+        std::string l = lines[i];
+        size_t c0 = l.find("/*");
+        if (c0 != std::string::npos) {
+            size_t c1 = l.find("*/", c0);
+            l = (c1 != std::string::npos) ? l.substr(0, c0) + l.substr(c1 + 2) : l.substr(0, c0);
+        }
+        bool inStr = false;
+        for (size_t q = 0; q < l.size();) {
+            char ch = l[q];
+            if (inStr) {
+                if (ch == '\\') { q += 2; continue; }
+                if (ch == '"') inStr = false;
+                ++q;
+                continue;
+            }
+            if (ch == '"') { inStr = true; ++q; continue; }
+            if (isalpha((unsigned char)ch) || ch == '_') {
+                size_t r = q;
+                while (r < l.size() && (isalnum((unsigned char)l[r]) || l[r] == '_')) ++r;
+                if (l.substr(q, r - q) == word) {
+                    if (!first) out += ",";
+                    first = false;
+                    out += "{\"range\":{\"start\":{\"line\":" + std::to_string(i) +
+                           ",\"character\":" + std::to_string((int)q) +
+                           "},\"end\":{\"line\":" + std::to_string(i) +
+                           ",\"character\":" + std::to_string((int)r) +
+                           "}},\"newText\":" + jsonEscape(newName) + "}";
+                }
+                q = r;
+                continue;
+            }
+            ++q;
+        }
+    }
+    out += "]}}";
+    return out;
 }
 
 // workspace/symbol：跨文档 def 符号
@@ -594,10 +693,10 @@ void runLsp() {
                 "\"completionProvider\":{\"triggerCharacters\":[\"#\"]},"
                 "\"hoverProvider\":true,\"codeActionProvider\":true,"
                 "\"documentSymbolProvider\":true,\"foldingRangeProvider\":true,"
-                "\"definitionProvider\":true,"
+                "\"definitionProvider\":true,\"renameProvider\":true,"
                 "\"signatureHelpProvider\":{\"triggerCharacters\":[\"(\"]},"
                 "\"workspaceSymbolProvider\":true},"
-                "\"serverInfo\":{\"name\":\"vesna-lsp\",\"version\":\"1.8.0\"}}";
+                "\"serverInfo\":{\"name\":\"vesna-lsp\",\"version\":\"2.0.0\"}}";
             sendResponse(id, res);
         }
         else if (method == "initialized") {
@@ -656,6 +755,15 @@ void runLsp() {
             int64_t character = jsonFindInt(body, "character", posLine);
             auto it = g_docs.find(uri);
             sendResponse(id, definitionJson(uri, it != g_docs.end() ? it->second.text : "", (int)line, (int)character));
+        }
+        else if (method == "textDocument/rename") {
+            std::string uri = jsonFind(body, "uri");
+            size_t posLine = body.find("\"position\"");
+            int64_t line = jsonFindInt(body, "line", posLine);
+            int64_t character = jsonFindInt(body, "character", posLine);
+            std::string newName = jsonFind(body, "newName");
+            auto it = g_docs.find(uri);
+            sendResponse(id, renameJson(uri, it != g_docs.end() ? it->second.text : "", (int)line, (int)character, newName));
         }
         else if (method == "textDocument/signatureHelp") {
             std::string uri = jsonFind(body, "uri");
