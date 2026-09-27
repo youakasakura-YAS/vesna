@@ -4,7 +4,7 @@
   "displayName": "Vesna",
   "description": "Vesna 语言支持 — LSP（原生 C++：诊断/补全/悬停/符号/折叠/跳转定义/重命名/签名提示/工作区符号）+ 语法高亮 214 内置；LSP 支持格式化与引用查找",
   "icon": "icon.png",
-  "version": "2.6.0",
+  "version": "2.7.0",
   "engines": {
     "vscode": "^1.60.0"
   },
