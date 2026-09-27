@@ -1,0 +1,58 @@
+/* Vesna 2.6 内置测试：version / rand_str / url_parse / hash_file / dir_walk / download / clip / disk_free */
+v = #version(),
+if v == "2.6.0"-
+-print("PASS version"),
+else-
+-print("FAIL version"),
+
+rs = #rand_str('16'),
+if #len(rs) == '16'-
+-print("PASS rand_str len"),
+else-
+-print("FAIL rand_str len"),
+
+u = #url_parse("https://user@example.com:8080/a/b?x=1"),
+if u["scheme"] == "https" and u["host"] == "example.com" and u["port"] == '8080' and u["path"] == "/a/b" and u["query"] == "x=1"-
+-print("PASS url_parse"),
+else-
+-print("FAIL url_parse"),
+
+#fwrite("_t26_tmp.txt"; "abc"),
+hf = #hash_file("_t26_tmp.txt"; "sha256"),
+if hf == #sha256("abc")-
+-print("PASS hash_file sha256"),
+else-
+-print("FAIL hash_file sha256"),
+hfc = #hash_file("_t26_tmp.txt"; "crc32"),
+if hfc == #crc32("abc")-
+-print("PASS hash_file crc32"),
+else-
+-print("FAIL hash_file crc32"),
+
+#mkdirs("_t26_dir/sub"),
+#fwrite("_t26_dir/a.txt"; "a"),
+#fwrite("_t26_dir/sub/b.txt"; "b"),
+dw = #dir_walk("_t26_dir"),
+if #len(dw) == '2'-
+-print("PASS dir_walk"),
+else-
+-print("FAIL dir_walk " + #str(#len(dw))),
+
+ok = #download("https://youakasakura-YAS.github.io/vesna-pkg/registry.json"; "_t26_dl.json"),
+if ok and #fexists("_t26_dl.json") and #fsize("_t26_dl.json") > '0'-
+-print("PASS download"),
+else-
+-print("FAIL download"),
+
+#clip_set("vesna26"),
+cg = #clip_get(),
+if cg == "vesna26"-
+-print("PASS clip"),
+else-
+-print("FAIL clip"),
+
+df = #disk_free("F:\\"),
+if df > '0'-
+-print("PASS disk_free"),
+else-
+-print("FAIL disk_free"),

@@ -134,6 +134,7 @@ inline int tcpPing(const std::string& host, int port) {
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <dlfcn.h>
+#include <sys/statvfs.h>
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
 #endif

@@ -52,7 +52,7 @@ namespace vesna {
 
 static std::string parentDir(const std::string& path);
 static std::string strFloat(double f);
-const std::string VERSION = "2.0.0";
+const std::string VERSION = "2.6.0";
 
 
 // ============================================================
@@ -2760,7 +2760,9 @@ const std::vector<std::pair<std::string, int>> g_builtinNames = {
     {"tcp_connect",184},{"tcp_listen",185},{"tcp_accept",186},{"tcp_send",187},{"tcp_recv",188},{"tcp_close",189},
     {"encrypt_file",190},{"decrypt_file",191},{"encrypt_dir",192},{"decrypt_dir",193},
     {"udp_open",194},{"udp_send",195},{"udp_recv",196},{"udp_close",197},{"dns_lookup",198},
-    {"thread_id",199},{"sem_open",200},{"sem_wait",201},{"sem_post",202},{"sem_close",203},{"crc32",204},{"adler32",205}
+    {"thread_id",199},{"sem_open",200},{"sem_wait",201},{"sem_post",202},{"sem_close",203},{"crc32",204},{"adler32",205},
+    {"dir_walk",206},{"hash_file",207},{"download",208},{"version",209},{"disk_free",210},
+    {"rand_str",211},{"url_parse",212},{"clip_get",213},{"clip_set",214}
 };
 
 
@@ -5493,6 +5495,131 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
         }
         if (s.t() != Value::T::STR) throw VesnaError("-adler32 需要字符串或字节列表");
         return mkStr(adler32Hex(s.s()));
+    }
+    case 206: {  // -dir_walk(dir) -> 递归列出全部文件路径（跳过权限拒绝）
+        Value d = ev(0);
+        if (d.t() != Value::T::STR) throw VesnaError("-dir_walk 需要路径字符串");
+        std::error_code ec;
+        Value out = mkList();
+        std::filesystem::recursive_directory_iterator it(
+            std::filesystem::u8path(d.s()),
+            std::filesystem::directory_options::skip_permission_denied, ec), end;
+        for (; !ec && it != end; it.increment(ec)) {
+            if (it->is_regular_file()) out.list()->items.push_back(mkStr(it->path().u8string()));
+        }
+        return out;
+    }
+    case 207: {  // -hash_file(path; alg) -> 文件哈希 hex（sha256/crc32/adler32）
+        Value p = ev(0), a = ev(1);
+        if (p.t() != Value::T::STR || a.t() != Value::T::STR)
+            throw VesnaError("-hash_file 需要路径与算法字符串");
+        std::ifstream f(std::filesystem::u8path(p.s()), std::ios::binary);
+        if (!f) throw VesnaError("-hash_file 无法打开: " + p.s());
+        std::string data((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        if (a.s() == "sha256") return mkStr(sha256Hex(data));
+        if (a.s() == "crc32") return mkStr(crc32Hex(data));
+        if (a.s() == "adler32") return mkStr(adler32Hex(data));
+        throw VesnaError("-hash_file 算法须为 sha256/crc32/adler32");
+    }
+    case 208: {  // -download(url; path) -> HTTP GET 下载到文件，返回是否成功
+        Value u = ev(0), p = ev(1);
+        if (u.t() != Value::T::STR || p.t() != Value::T::STR)
+            throw VesnaError("-download 需要 URL 与路径字符串");
+        std::string data = httpRequest(u.s(), "", false);
+        if (data.empty()) return mkBool(false);
+        std::ofstream f(std::filesystem::u8path(p.s()), std::ios::binary | std::ios::trunc);
+        if (!f) return mkBool(false);
+        f.write(data.data(), (std::streamsize)data.size());
+        return mkBool(f.good());
+    }
+    case 209: {  // -version() -> Vesna 版本字符串
+        return mkStr(VERSION);
+    }
+    case 210: {  // -disk_free(path) -> 磁盘剩余字节（POSIX statvfs / Win GetDiskFreeSpaceExW）
+        Value p = ev(0);
+        if (p.t() != Value::T::STR) throw VesnaError("-disk_free 需要路径字符串");
+#ifdef _WIN32
+        ULARGE_INTEGER freeAvail;
+        if (GetDiskFreeSpaceExW(utf8ToWide(p.s()).c_str(), &freeAvail, nullptr, nullptr))
+            return mkInt((int64_t)freeAvail.QuadPart);
+        return mkInt(-1);
+#else
+        struct statvfs sv;
+        if (statvfs(p.s().c_str(), &sv) == 0)
+            return mkInt((int64_t)sv.f_bavail * (int64_t)sv.f_frsize);
+        return mkInt(-1);
+#endif
+    }
+    case 211: {  // -rand_str(n) -> 随机字母数字字符串
+        Value n = ev(0);
+        if (n.t() != Value::T::INT || n.i() < 0) throw VesnaError("-rand_str 需要非负整数长度");
+        static const char* cs = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        std::uniform_int_distribution<int> dist(0, 61);
+        std::string out;
+        out.reserve((size_t)n.i());
+        for (int64_t i = 0; i < n.i(); ++i) out += cs[dist(rngGen())];
+        return mkStr(out);
+    }
+    case 212: {  // -url_parse(url) -> {scheme; host; port; path; query}
+        Value u = ev(0);
+        if (u.t() != Value::T::STR) throw VesnaError("-url_parse 需要 URL 字符串");
+        std::string url = u.s();
+        Value d = mkDict();
+        size_t sch = url.find("://");
+        std::string scheme = "http", rest = url;
+        if (sch != std::string::npos) { scheme = url.substr(0, sch); rest = url.substr(sch + 3); }
+        d.dict()->pairs.push_back(std::make_pair(mkStr("scheme"), mkStr(scheme)));
+        size_t slash = rest.find('/');
+        std::string hp = (slash == std::string::npos) ? rest : rest.substr(0, slash);
+        std::string path = (slash == std::string::npos) ? "/" : rest.substr(slash);
+        size_t colon = hp.rfind(':');
+        std::string host = hp, port = "";
+        if (colon != std::string::npos) { host = hp.substr(0, colon); port = hp.substr(colon + 1); }
+        size_t at = host.rfind('@');
+        if (at != std::string::npos) host = host.substr(at + 1);  // 剥离 userinfo
+        size_t q = path.find('?');
+        std::string query = "";
+        if (q != std::string::npos) { query = path.substr(q + 1); path = path.substr(0, q); }
+        d.dict()->pairs.push_back(std::make_pair(mkStr("host"), mkStr(host)));
+        int64_t dflt = scheme == "https" ? 443 : 80;
+        if (!port.empty()) { try { dflt = std::stoll(port); } catch (...) {} }
+        d.dict()->pairs.push_back(std::make_pair(mkStr("port"), mkInt(dflt)));
+        d.dict()->pairs.push_back(std::make_pair(mkStr("path"), mkStr(path)));
+        d.dict()->pairs.push_back(std::make_pair(mkStr("query"), mkStr(query)));
+        return d;
+    }
+    case 213: {  // -clip_get() -> 剪贴板文本（POSIX 返回 none）
+#ifdef _WIN32
+        if (!OpenClipboard(nullptr)) return mkNone();
+        HANDLE h = GetClipboardData(CF_UNICODETEXT);
+        if (!h) { CloseClipboard(); return mkNone(); }
+        wchar_t* ws = (wchar_t*)GlobalLock(h);
+        std::string out = ws ? wideToUtf8(ws) : "";
+        if (ws) GlobalUnlock(h);
+        CloseClipboard();
+        return mkStr(out);
+#else
+        return mkNone();
+#endif
+    }
+    case 214: {  // -clip_set(s) -> 设置剪贴板文本（POSIX 返回 false）
+#ifdef _WIN32
+        Value v = ev(0);
+        if (v.t() != Value::T::STR) throw VesnaError("-clip_set 需要字符串");
+        std::wstring ws = utf8ToWide(v.s());
+        if (!OpenClipboard(nullptr)) return mkBool(false);
+        EmptyClipboard();
+        HGLOBAL h = GlobalAlloc(GMEM_MOVEABLE, (ws.size() + 1) * sizeof(wchar_t));
+        if (!h) { CloseClipboard(); return mkBool(false); }
+        wchar_t* dst = (wchar_t*)GlobalLock(h);
+        if (dst) memcpy(dst, ws.c_str(), (ws.size() + 1) * sizeof(wchar_t));
+        GlobalUnlock(h);
+        SetClipboardData(CF_UNICODETEXT, h);
+        CloseClipboard();
+        return mkBool(true);
+#else
+        return mkBool(false);
+#endif
     }
 
     }
