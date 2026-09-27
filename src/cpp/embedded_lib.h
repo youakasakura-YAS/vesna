@@ -284,11 +284,51 @@ def cmp_versions(a; b)-
 ---back('1'),
 -back('0'),
 
+def parse_constraint(w)-
+-/* 解析版本约束 -> {op; ver}；op: any/exact/>=/>/<=/</^/~ */
+-w = #trim(w),
+-if w == "" or w == "*"-
+--back({"op":"any";"ver":""}),
+-ops = [">=";">";"<=";"<";"^";"~"],
+-for op in ops-
+--if #startswith(w; op)-
+---back({"op":op;"ver":#sub(w; #len(op) + '1'; #len(w))}),
+-back({"op":"exact";"ver":w}),
+
+def next_major(v)-
+-vp = #split(v; "."),
+-back(#str(#int(vp['1']) + '1') + ".0.0"),
+
+def next_minor(v)-
+-vp = #split(v; "."),
+-back(#str(#int(vp['1'])) + "." + #str(#int(vp['2']) + '1') + ".0"),
+
 def version_satisfies(have; want)-
--/* have >= want */
--if cmp_versions(have; want) >= '0'-
+-/* 语义化版本约束：精确 / >= > <= < / ^（同主版本）/ ~（同次版本） */
+-c = parse_constraint(want),
+-op = c["op"],
+-v = c["ver"],
+-if op == "any"-
 --back(true),
--back(false),
+-if op == "exact"-
+--back(cmp_versions(have; v) == '0'),
+-if op == ">="-
+--back(cmp_versions(have; v) >= '0'),
+-if op == ">"-
+--back(cmp_versions(have; v) > '0'),
+-if op == "<="-
+--back(cmp_versions(have; v) <= '0'),
+-if op == "<"-
+--back(cmp_versions(have; v) < '0'),
+-if op == "^"-
+--if cmp_versions(have; v) < '0'-
+---back(false),
+--back(cmp_versions(have; next_major(v)) < '0'),
+-if op == "~"-
+--if cmp_versions(have; v) < '0'-
+---back(false),
+--back(cmp_versions(have; next_minor(v)) < '0'),
+-back(true),
 
 def walk_files(dir)-
 -/* 递归列出全部文件绝对路径 */
@@ -423,6 +463,8 @@ def install_from_dir(src; depth)-
 -#cpdir(src; target),
 -if not #fexists(target + "\\vesna-pkg.json")-
 --back(err("复制失败")),
+-if #has_key(meta; "entry") and not #fexists(target + "\\" + meta["entry"])-
+--back(err("安装后 entry 缺失: " + meta["entry"])),
 -print("  完成: " + name + " " + ver),
 -back(true),
 
@@ -478,8 +520,12 @@ def install_by_name(name; depth)-
 ----print("  错误: registry 中 " + name + " 缺少 url"),
 ----back(false),
 ---expect_sha = "",
----if #has_key(pkg; "sha256") and #type(pkg["sha256"]) == "str"-
+---if #has_key(pkg; "checksum") and #type(pkg["checksum"]) == "str"-
+----expect_sha = pkg["checksum"],
+---elif #has_key(pkg; "sha256") and #type(pkg["sha256"]) == "str"-
 ----expect_sha = pkg["sha256"],
+---if expect_sha == ""-
+----print("  警告: registry 条目无 checksum，跳过完整性校验"),
 ---pver = "0.0.0",
 ---if #has_key(pkg; "version") and #type(pkg["version"]) == "str"-
 ----pver = pkg["version"],
@@ -553,6 +599,7 @@ if cmd == "init"-
 -#exit('0'),
 
 if cmd == "install"-
+-#mkdirs(pkgs),
 -if #len(args) < '2'-
 --print("用法: vesna --pkg install <目录|zip|owner:repo>"),
 --#exit('1'),

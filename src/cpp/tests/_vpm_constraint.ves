@@ -1,0 +1,85 @@
+/* vpm 约束解析单元测试 */
+def cmp_versions(a; b)-
+-ap = #split(a; "."),
+-bp = #split(b; "."),
+-if #len(ap) < '3' or #len(bp) < '3'-
+--back('0'),
+-for i in ['1';'2';'3']-
+--ai = #int(ap[i]),
+--bi = #int(bp[i]),
+--if ai < bi-
+---back('-1'),
+--if ai > bi-
+---back('1'),
+-back('0'),
+
+def parse_constraint(w)-
+-w = #trim(w),
+-if w == "" or w == "*"-
+--back({"op":"any";"ver":""}),
+-ops = [">=";">";"<=";"<";"^";"~"],
+-for op in ops-
+--if #startswith(w; op)-
+---back({"op":op;"ver":#sub(w; #len(op) + '1'; #len(w))}),
+-back({"op":"exact";"ver":w}),
+
+def next_major(v)-
+-vp = #split(v; "."),
+-back(#str(#int(vp['1']) + '1') + ".0.0"),
+
+def next_minor(v)-
+-vp = #split(v; "."),
+-back(#str(#int(vp['1'])) + "." + #str(#int(vp['2']) + '1') + ".0"),
+
+def version_satisfies(have; want)-
+-c = parse_constraint(want),
+-op = c["op"],
+-v = c["ver"],
+-if op == "any"-
+--back(true),
+-if op == "exact"-
+--back(cmp_versions(have; v) == '0'),
+-if op == ">="-
+--back(cmp_versions(have; v) >= '0'),
+-if op == ">"-
+--back(cmp_versions(have; v) > '0'),
+-if op == "<="-
+--back(cmp_versions(have; v) <= '0'),
+-if op == "<"-
+--back(cmp_versions(have; v) < '0'),
+-if op == "^"-
+--if cmp_versions(have; v) < '0'-
+---back(false),
+--back(cmp_versions(have; next_major(v)) < '0'),
+-if op == "~"-
+--if cmp_versions(have; v) < '0'-
+---back(false),
+--back(cmp_versions(have; next_minor(v)) < '0'),
+-back(true),
+
+ok = ['0'], fail = ['0'],
+def t(name; cond)-
+-if cond-
+--ok['1'] = ok['1'] + '1',
+--print("PASS " + name),
+-else-
+--fail['1'] = fail['1'] + '1',
+--print("FAIL " + name),
+
+t("exact eq"; version_satisfies("1.2.3"; "1.2.3")),
+t("exact ne"; not version_satisfies("1.2.4"; "1.2.3")),
+t("ge ok"; version_satisfies("1.3.0"; ">=1.2.3")),
+t("ge no"; not version_satisfies("1.2.2"; ">=1.2.3")),
+t("gt"; version_satisfies("1.2.4"; ">1.2.3")),
+t("gt no"; not version_satisfies("1.2.3"; ">1.2.3")),
+t("le"; version_satisfies("1.2.3"; "<=1.2.3")),
+t("lt no"; not version_satisfies("1.2.3"; "<1.2.3")),
+t("caret same-major"; version_satisfies("1.9.9"; "^1.2.3")),
+t("caret next-major no"; not version_satisfies("2.0.0"; "^1.2.3")),
+t("tilde same-minor"; version_satisfies("1.2.9"; "~1.2.3")),
+t("tilde next-minor no"; not version_satisfies("1.3.0"; "~1.2.3")),
+t("star"; version_satisfies("9.9.9"; "*")),
+t("empty"; version_satisfies("0.1.0"; "")),
+print("ok=" + #str(ok['1']) + " fail=" + #str(fail['1'])),
+if fail['1'] > '0'-
+-#exit('1'),
