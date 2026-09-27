@@ -2741,7 +2741,8 @@ const std::vector<std::pair<std::string, int>> g_builtinNames = {
     {"xml_parse",174},{"ffi_call_s",175},{"call",176},
     {"date_format",177},{"parse_time",178},{"uuid",179},{"http_server",180},{"file_time",181},{"truncate",182},{"arch",183},
     {"tcp_connect",184},{"tcp_listen",185},{"tcp_accept",186},{"tcp_send",187},{"tcp_recv",188},{"tcp_close",189},
-    {"encrypt_file",190},{"decrypt_file",191},{"encrypt_dir",192},{"decrypt_dir",193}
+    {"encrypt_file",190},{"decrypt_file",191},{"encrypt_dir",192},{"decrypt_dir",193},
+    {"udp_open",194},{"udp_send",195},{"udp_recv",196},{"udp_close",197},{"dns_lookup",198}
 };
 
 
@@ -4997,7 +4998,7 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
         if (s == INVALID_SOCKET) throw VesnaError("-tcp_connect 无法创建套接字");
         struct sockaddr_in addr;
         addr.sin_family = AF_INET;
-        addr.sin_port = htons((u_short)port);
+        addr.sin_port = htons((unsigned short)port);
         addr.sin_addr.s_addr = inet_addr(host.c_str());
         if (addr.sin_addr.s_addr == INADDR_NONE) {
             hostent* he = gethostbyname(host.c_str());
@@ -5013,7 +5014,7 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
         if (s < 0) throw VesnaError("-tcp_connect 无法创建套接字");
         struct sockaddr_in addr;
         addr.sin_family = AF_INET;
-        addr.sin_port = htons((u_short)port);
+        addr.sin_port = htons((unsigned short)port);
         struct hostent* he = gethostbyname(host.c_str());
         if (!he) { close(s); throw VesnaError("-tcp_connect 无法解析主机: " + host); }
         std::memcpy(&addr.sin_addr, he->h_addr, (size_t)he->h_length);
@@ -5036,7 +5037,7 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
         setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt));
         struct sockaddr_in addr;
         addr.sin_family = AF_INET;
-        addr.sin_port = htons((u_short)port);
+        addr.sin_port = htons((unsigned short)port);
         addr.sin_addr.s_addr = INADDR_ANY;
         if (bind(s, (struct sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) {
             closesocket(s); throw VesnaError("-tcp_listen 绑定失败: 端口 " + std::to_string(port) + " 被占用?");
@@ -5050,7 +5051,7 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
         setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
         struct sockaddr_in addr;
         addr.sin_family = AF_INET;
-        addr.sin_port = htons((u_short)port);
+        addr.sin_port = htons((unsigned short)port);
         addr.sin_addr.s_addr = INADDR_ANY;
         if (bind(s, (struct sockaddr*)&addr, sizeof(addr)) != 0) { close(s); throw VesnaError("-tcp_listen 绑定失败"); }
         if (listen(s, 8) != 0) { close(s); throw VesnaError("-tcp_listen listen 失败"); }
@@ -5235,6 +5236,139 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
             }
         }
         return mkInt(count);
+    }
+
+    case 194: {  // -udp_open(port=0) -> UDP 套接字句柄（绑定端口，0=随机）
+        Value pV = ev(0);
+        if (pV.t() != Value::T::NONE && pV.t() != Value::T::INT)
+            throw VesnaError("-udp_open 需要端口整数（0=随机端口）");
+        int port = pV.t() == Value::T::INT ? (int)pV.i() : 0;
+#ifdef _WIN32
+        static bool wsa_udp = false;
+        if (!wsa_udp) { WSADATA wsa; if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) throw VesnaError("-udp_open WSAStartup 失败"); wsa_udp = true; }
+        SOCKET s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        if (s == INVALID_SOCKET) throw VesnaError("-udp_open 无法创建套接字");
+        struct sockaddr_in addr;
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons((unsigned short)port);
+        addr.sin_addr.s_addr = INADDR_ANY;
+        if (bind(s, (struct sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) {
+            closesocket(s); throw VesnaError("-udp_open 绑定失败: 端口 " + std::to_string(port) + " 被占用?");
+        }
+        return mkInt((int64_t)s);
+#else
+        int s = socket(AF_INET, SOCK_DGRAM, 0);
+        if (s < 0) throw VesnaError("-udp_open 无法创建套接字");
+        struct sockaddr_in addr;
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons((unsigned short)port);
+        addr.sin_addr.s_addr = INADDR_ANY;
+        if (bind(s, (struct sockaddr*)&addr, sizeof(addr)) != 0) { close(s); throw VesnaError("-udp_open 绑定失败"); }
+        return mkInt((int64_t)s);
+#endif
+    }
+    case 195: {  // -udp_send(handle; host; port; data) -> 发送字节数
+        Value sV = ev(0), hV = ev(1), pV = ev(2), dV = ev(3);
+        if (sV.t() != Value::T::INT || hV.t() != Value::T::STR || pV.t() != Value::T::INT || dV.t() != Value::T::STR)
+            throw VesnaError("-udp_send 需要句柄整数、主机字符串、端口整数与数据字符串");
+        const std::string& data = dV.s();
+#ifdef _WIN32
+        SOCKET s = (SOCKET)sV.i();
+        struct sockaddr_in addr;
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons((unsigned short)(int)pV.i());
+        addr.sin_addr.s_addr = inet_addr(hV.s().c_str());
+        if (addr.sin_addr.s_addr == INADDR_NONE) {
+            hostent* he = gethostbyname(hV.s().c_str());
+            if (!he) throw VesnaError("-udp_send 无法解析主机: " + hV.s());
+            std::memcpy(&addr.sin_addr, he->h_addr, (size_t)he->h_length);
+        }
+        int n = sendto(s, data.data(), (int)data.size(), 0, (struct sockaddr*)&addr, sizeof(addr));
+        if (n == SOCKET_ERROR) throw VesnaError("-udp_send 发送失败");
+        return mkInt((int64_t)n);
+#else
+        int s = (int)sV.i();
+        struct sockaddr_in addr;
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons((unsigned short)(int)pV.i());
+        struct hostent* he = gethostbyname(hV.s().c_str());
+        if (!he) throw VesnaError("-udp_send 无法解析主机: " + hV.s());
+        std::memcpy(&addr.sin_addr, he->h_addr, (size_t)he->h_length);
+        int n = (int)sendto(s, data.data(), data.size(), 0, (struct sockaddr*)&addr, sizeof(addr));
+        if (n < 0) throw VesnaError("-udp_send 发送失败");
+        return mkInt((int64_t)n);
+#endif
+    }
+    case 196: {  // -udp_recv(handle; maxlen; timeout_ms=0) -> 数据（超时返回空串）
+        Value sV = ev(0), mV = ev(1), tV = ev(2);
+        if (sV.t() != Value::T::INT || mV.t() != Value::T::INT)
+            throw VesnaError("-udp_recv 需要句柄与最大字节数整数");
+        if (tV.t() != Value::T::NONE && tV.t() != Value::T::INT)
+            throw VesnaError("-udp_recv 第三参数需要超时毫秒整数");
+        int maxlen = (int)mV.i();
+        if (maxlen <= 0) maxlen = 4096;
+        int64_t timeout = tV.t() == Value::T::INT ? tV.i() : 0;
+#ifdef _WIN32
+        SOCKET s = (SOCKET)sV.i();
+        if (timeout > 0) {
+            DWORD to = (DWORD)timeout;
+            setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (const char*)&to, sizeof(to));
+        }
+        std::string out((size_t)maxlen, '\0');
+        int n = recvfrom(s, &out[0], maxlen, 0, nullptr, nullptr);
+        if (n == SOCKET_ERROR) {
+            if (timeout > 0) return mkStr("");
+            throw VesnaError("-udp_recv 接收失败");
+        }
+        if (n == 0) return mkStr("");
+        out.resize((size_t)n);
+        return mkStr(out);
+#else
+        int s = (int)sV.i();
+        if (timeout > 0) {
+            struct timeval tv;
+            tv.tv_sec = (long)(timeout / 1000);
+            tv.tv_usec = (long)((timeout % 1000) * 1000);
+            setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+        }
+        std::string out((size_t)maxlen, '\0');
+        int n = (int)recvfrom(s, &out[0], (size_t)maxlen, 0, nullptr, nullptr);
+        if (n < 0) {
+            if (timeout > 0) return mkStr("");
+            throw VesnaError("-udp_recv 接收失败");
+        }
+        if (n == 0) return mkStr("");
+        out.resize((size_t)n);
+        return mkStr(out);
+#endif
+    }
+    case 197: {  // -udp_close(handle)
+        Value sV = ev(0);
+        if (sV.t() != Value::T::INT) throw VesnaError("-udp_close 需要句柄整数");
+#ifdef _WIN32
+        closesocket((SOCKET)sV.i());
+#else
+        close((int)sV.i());
+#endif
+        return mkNone();
+    }
+    case 198: {  // -dns_lookup(host) -> IP 地址列表
+        Value hV = ev(0);
+        if (hV.t() != Value::T::STR) throw VesnaError("-dns_lookup 需要主机名字符串");
+#ifdef _WIN32
+        static bool wsa_dns = false;
+        if (!wsa_dns) { WSADATA wsa; if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) throw VesnaError("-dns_lookup WSAStartup 失败"); wsa_dns = true; }
+        hostent* he = gethostbyname(hV.s().c_str());
+#else
+        struct hostent* he = gethostbyname(hV.s().c_str());
+#endif
+        if (!he) throw VesnaError("-dns_lookup 无法解析主机: " + hV.s());
+        Value l = mkList();
+        for (int i = 0; he->h_addr_list[i]; ++i) {
+            char* ip = inet_ntoa(*(struct in_addr*)he->h_addr_list[i]);
+            l.list()->items.push_back(mkStr(ip ? std::string(ip) : "0.0.0.0"));
+        }
+        return l;
     }
 
 
