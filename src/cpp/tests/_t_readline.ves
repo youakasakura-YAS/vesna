@@ -1,0 +1,4 @@
+line = #readline(),
+print("got: " + line),
+line2 = #readline(),
+print("got2: " + line2),

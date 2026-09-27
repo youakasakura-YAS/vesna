@@ -52,7 +52,7 @@ namespace vesna {
 
 static std::string parentDir(const std::string& path);
 static std::string strFloat(double f);
-const std::string VERSION = "2.8.0";
+const std::string VERSION = "2.9.0";
 
 
 // ============================================================
@@ -2762,7 +2762,7 @@ const std::vector<std::pair<std::string, int>> g_builtinNames = {
     {"udp_open",194},{"udp_send",195},{"udp_recv",196},{"udp_close",197},{"dns_lookup",198},
     {"thread_id",199},{"sem_open",200},{"sem_wait",201},{"sem_post",202},{"sem_close",203},{"crc32",204},{"adler32",205},
     {"dir_walk",206},{"hash_file",207},{"download",208},{"version",209},{"disk_free",210},
-    {"rand_str",211},{"url_parse",212},{"clip_get",213},{"clip_set",214}
+    {"rand_str",211},{"url_parse",212},{"clip_get",213},{"clip_set",214},{"readline",215}
 };
 
 
@@ -3423,6 +3423,14 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
         std::string data((std::istreambuf_iterator<char>(std::cin)),
                          std::istreambuf_iterator<char>());
         return mkStr(univNewlines(data));
+    }
+
+    // ---- readline: 读 stdin 一行（EOF 返回空串）----
+    case 215: {
+        std::string line;
+        if (!std::getline(std::cin, line)) return mkStr("");
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        return mkStr(line);
     }
 
     // ---- 字符 ----

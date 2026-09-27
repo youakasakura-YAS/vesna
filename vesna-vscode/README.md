@@ -1,6 +1,6 @@
 # Vesna
 
-Vesna language support for Visual Studio Code — native C++ LSP (diagnostics / completion / hover / symbols / folding / go-to-definition / rename / signature help / workspace symbols) plus syntax highlighting for 214 builtins.
+Vesna language support for Visual Studio Code — native C++ LSP (diagnostics / completion / hover / symbols / folding / go-to-definition / rename / signature help / workspace symbols) plus syntax highlighting for 215 builtins.
 
 ## Features
 
@@ -24,7 +24,7 @@ Vesna language support for Visual Studio Code — native C++ LSP (diagnostics / 
 
 # Vesna（中文）
 
-Vesna 语言的 VS Code 支持扩展 — 原生 C++ LSP（诊断/补全/悬停/符号/折叠/跳转定义/重命名/签名提示/工作区符号 / 格式化 / 引用查找）+ 214 内置函数语法高亮。
+Vesna 语言的 VS Code 支持扩展 — 原生 C++ LSP（诊断/补全/悬停/符号/折叠/跳转定义/重命名/签名提示/工作区符号 / 格式化 / 引用查找）+ 215 内置函数语法高亮。
 
 ## 功能
 
