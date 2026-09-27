@@ -1,0 +1,11 @@
+/* dbg2 test */
+def add(a; b)-
+-r = a + b,
+-back(r),
+i = '0',
+sum = '0',
+while i < '5'-
+-sum = add(sum; i),
+-i = i + '1',
+print("sum=" + #str(sum)),
+print("done"),

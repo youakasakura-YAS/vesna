@@ -1,4 +1,4 @@
-// main.cpp — Vesna 1.3.1 C++ 命令行入口
+// main.cpp — Vesna 2.0.0 C++ 命令行入口
 #include "vesna.hpp"
 #include "platform.h"
 #include "embedded_lib.h"
@@ -261,7 +261,9 @@ int mainCli(int argc, char** argv) {
         try {
             return runFileDbg(path, args);
         } catch (VesnaError& e) {
-            std::cerr << "错误: " << e.str() << std::endl;
+            std::string src;
+            try { src = readFileUtf8(path); } catch (...) {}
+            std::cerr << "错误: " << errWithSource(e, src) << std::endl;
             return 1;
         }
     }
@@ -320,7 +322,9 @@ int mainCli(int argc, char** argv) {
     try {
         runFile(path, args);
     } catch (VesnaError& e) {
-        std::cerr << "错误: " << e.str() << std::endl;
+        std::string src;
+        try { src = readFileUtf8(path); } catch (...) {}
+        std::cerr << "错误: " << errWithSource(e, src) << std::endl;
         return 1;
     }
     return 0;

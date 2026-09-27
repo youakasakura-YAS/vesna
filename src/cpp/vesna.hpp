@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <exception>
+#include <map>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -23,13 +24,17 @@ class VesnaError : public std::exception {
 public:
     std::string msg;
     int line;
-    VesnaError(std::string m, int l = -1) : msg(std::move(m)), line(l) {}
+    int col;
+    VesnaError(std::string m, int l = -1, int c = -1) : msg(std::move(m)), line(l), col(c) {}
     const char* what() const noexcept override { return msg.c_str(); }
     std::string str() const {
         if (line < 0) return msg;
         return "[第 " + std::to_string(line) + " 行] " + msg;
     }
 };
+
+// 错误上下文显示：行号 + 源码行 + 列插入符（col >= 0 时）
+std::string errWithSource(const VesnaError& e, const std::string& src);
 
 class BreakSignal : public std::exception {};
 class ContinueSignal : public std::exception {};
@@ -253,9 +258,11 @@ struct Interp {
     // ---- 调试器状态 ----
     bool dbg = false;
     std::string dbg_file;
-    std::set<int> dbg_breaks;
-    int dbg_mode = 0;                  // 0=运行 1=step 2=next
+    std::map<int, std::string> dbg_breaks;   // 行号 -> 条件表达式（空串=无条件）
+    std::vector<std::string> dbg_watches;    // watch 监视表达式
+    int dbg_mode = 0;                        // 0=运行 1=step 2=next 3=finish
     int dbg_next_depth = 0;
+    int dbg_finish_depth = 0;
     std::shared_ptr<Env> dbg_env;
     int dbg_line = 0;
     std::string dbg_fname;
@@ -264,6 +271,7 @@ struct Interp {
     void dbgLoop();
     void dbgPrintFrames();
     void dbgPrintList();
+    void dbgPrintWatches();
     void dbgHelp();
 
     explicit Interp(std::vector<std::string> a = {}, std::string dir = ".")

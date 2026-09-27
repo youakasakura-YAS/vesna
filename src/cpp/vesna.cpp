@@ -37,7 +37,7 @@ namespace vesna {
 
 static std::string parentDir(const std::string& path);
 static std::string strFloat(double f);
-const std::string VERSION = "1.9.0";
+const std::string VERSION = "2.0.0";
 
 
 // ============================================================
@@ -880,6 +880,11 @@ private:
         while (peek().kind == TK_PLUS || peek().kind == TK_MINUS) {
             std::string op = binopName(advance().value);
             auto r = mul();
+            // 编译期折叠：字符串字面量连接（"a" + "b" -> "ab"），语义不变，省运行时拼接
+            if (op == "PLUS" && l->k == Expr::K::STR && r->k == Expr::K::STR) {
+                l->str += r->str;
+                continue;
+            }
             auto e = std::make_shared<Expr>(); e->k = Expr::K::BIN; e->op = op; e->a = l; e->b = r;
             l = e;
         }
@@ -1524,15 +1529,27 @@ void Interp::dbgCheck(const std::shared_ptr<Stmt>& stmt, const std::shared_ptr<E
     dbg_env = env;
     dbg_fname = frames.empty() ? "<main>" : frames.back().first;
     if (!frames.empty()) frames.back().second = dbg_line;
-    bool hit = dbg_breaks.count(stmt->line) > 0;
+    bool hit = false;
+    auto bit = dbg_breaks.find(stmt->line);
+    if (bit != dbg_breaks.end()) {
+        if (bit->second.empty()) hit = true;
+        else {
+            try {
+                auto e = parseExpr(bit->second, stmt->line);
+                hit = truthy(eval(e, env));
+            } catch (VesnaError&) { hit = true; }
+        }
+    }
     bool stepping = false;
     if (dbg_mode == 1) stepping = true;
     else if (dbg_mode == 2) stepping = (int)frames.size() <= dbg_next_depth;
+    else if (dbg_mode == 3) stepping = (int)frames.size() > dbg_finish_depth;
     if (hit || stepping) dbgLoop();
 }
 
 void Interp::dbgLoop() {
     std::cout << "停在 " << dbg_file << ":" << dbg_line << "（" << dbg_fname << "）\n";
+    dbgPrintWatches();
     while (true) {
         std::cout << "vesna-dbg> ";
         std::cout.flush();
@@ -1543,21 +1560,68 @@ void Interp::dbgLoop() {
         if (cmd == "c" || cmd == "continue") { dbg_mode = 0; return; }
         if (cmd == "n" || cmd == "next") { dbg_mode = 2; dbg_next_depth = (int)frames.size(); return; }
         if (cmd == "s" || cmd == "step") { dbg_mode = 1; return; }
+        if (cmd == "finish" || cmd == "f") { dbg_mode = 3; dbg_finish_depth = (int)frames.size(); return; }
         if (cmd == "q" || cmd == "quit") { std::cout << "已退出调试器\n"; std::exit(0); }
         if (cmd == "bt" || cmd == "backtrace") { dbgPrintFrames(); continue; }
         if (cmd == "list" || cmd == "l") { dbgPrintList(); continue; }
         if (cmd.rfind("break ", 0) == 0 || cmd.rfind("b ", 0) == 0) {
             int pos = (cmd[1] == ' ') ? 2 : 6;
-            int ln = atoi(trimStr(cmd.substr(pos)).c_str());
-            if (ln <= 0) { std::cout << "用法: break <行号>\n"; continue; }
-            dbg_breaks.insert(ln);
-            std::cout << "断点 @ " << ln << "\n";
+            std::string rest = trimStr(cmd.substr(pos));
+            std::string cond = "";
+            size_t ifpos = rest.find(" if ");
+            if (ifpos != std::string::npos) {
+                cond = trimStr(rest.substr(ifpos + 4));
+                rest = trimStr(rest.substr(0, ifpos));
+            }
+            int ln = atoi(rest.c_str());
+            if (ln <= 0) { std::cout << "用法: break <行号> [if <条件>]\n"; continue; }
+            dbg_breaks[ln] = cond;
+            std::cout << "断点 @ " << ln << (cond.empty() ? "" : " if " + cond) << "\n";
             continue;
         }
         if (cmd.rfind("del ", 0) == 0) {
-            int ln = atoi(trimStr(cmd.substr(4)).c_str());
+            std::string rest = trimStr(cmd.substr(4));
+            if (rest == "all") { dbg_breaks.clear(); std::cout << "已清空全部断点\n"; continue; }
+            int ln = atoi(rest.c_str());
             dbg_breaks.erase(ln);
             std::cout << "已删除断点 " << ln << "\n";
+            continue;
+        }
+        if (cmd.rfind("watch ", 0) == 0) {
+            std::string expr = trimStr(cmd.substr(6));
+            if (expr.empty()) { std::cout << "用法: watch <表达式>\n"; continue; }
+            dbg_watches.push_back(expr);
+            std::cout << "已添加监视: " << expr << "\n";
+            continue;
+        }
+        if (cmd.rfind("unwatch ", 0) == 0) {
+            int idx = atoi(trimStr(cmd.substr(8)).c_str());
+            if (idx < 1 || idx > (int)dbg_watches.size()) { std::cout << "用法: unwatch <序号>\n"; continue; }
+            dbg_watches.erase(dbg_watches.begin() + (idx - 1));
+            std::cout << "已删除监视 " << idx << "\n";
+            continue;
+        }
+        if (cmd == "watches" || cmd == "w") {
+            if (dbg_watches.empty()) { std::cout << "（无监视表达式）\n"; continue; }
+            for (size_t i = 0; i < dbg_watches.size(); ++i)
+                std::cout << "  [" << (i + 1) << "] " << dbg_watches[i] << "\n";
+            continue;
+        }
+        if (cmd.rfind("set ", 0) == 0) {
+            std::string rest = trimStr(cmd.substr(4));
+            size_t eq = rest.find('=');
+            if (eq == std::string::npos) { std::cout << "用法: set <变量> = <表达式>\n"; continue; }
+            std::string name = trimStr(rest.substr(0, eq));
+            std::string expr = trimStr(rest.substr(eq + 1));
+            if (name.empty() || expr.empty()) { std::cout << "用法: set <变量> = <表达式>\n"; continue; }
+            try {
+                auto e = parseExpr(expr, dbg_line);
+                Value v = eval(e, dbg_env);
+                dbg_env->set(internId(name), v);
+                std::cout << name << " = " << fmt(v) << "\n";
+            } catch (VesnaError& err) {
+                std::cout << "错误: " << err.msg << "\n";
+            }
             continue;
         }
         if (cmd.rfind("print ", 0) == 0 || cmd.rfind("p ", 0) == 0) {
@@ -1578,6 +1642,19 @@ void Interp::dbgLoop() {
         }
         if (cmd == "help" || cmd == "h") { dbgHelp(); continue; }
         std::cout << "未知命令，输入 help 查看\n";
+    }
+}
+
+void Interp::dbgPrintWatches() {
+    if (dbg_watches.empty()) return;
+    for (auto& w : dbg_watches) {
+        try {
+            auto e = parseExpr(w, dbg_line);
+            Value v = eval(e, dbg_env);
+            std::cout << "  watch " << w << " = " << fmt(v) << "\n";
+        } catch (VesnaError& err) {
+            std::cout << "  watch " << w << " = <error: " << err.msg << ">\n";
+        }
     }
 }
 
@@ -1608,9 +1685,12 @@ void Interp::dbgHelp() {
               << "  c / continue   继续运行\n"
               << "  n / next       执行下一语句（不进入函数）\n"
               << "  s / step       单步（进入函数）\n"
-              << "  b <行号>       设置断点\n"
-              << "  del <行号>     删除断点\n"
+              << "  finish         运行到当前函数返回\n"
+              << "  b <行号> [if <条件>]   设置（条件）断点\n"
+              << "  del <行号>|all 删除断点\n"
               << "  p <表达式>     求值表达式\n"
+              << "  set <变量> = <表达式>  修改变量\n"
+              << "  watch <表达式> 添加监视；watches 查看；unwatch <序号> 删除\n"
               << "  vars           列出当前变量\n"
               << "  bt             查看调用栈\n"
               << "  list           查看附近源码\n"
@@ -5020,6 +5100,27 @@ std::string findVesnaHome() {
     return (pos2 == std::string::npos) ? exe_dir : exe_dir.substr(0, pos2);
 }
 
+// 错误上下文显示：行号 + 源码行 + 列插入符（col >= 0 时）
+std::string errWithSource(const VesnaError& e, const std::string& src) {
+    std::string out = e.str();
+    if (e.line > 0) {
+        std::vector<std::string> lines;
+        std::string cur;
+        for (char ch : src) {
+            if (ch == '\n') { lines.push_back(cur); cur.clear(); }
+            else if (ch != '\r') cur += ch;
+        }
+        if (!cur.empty() || src.empty()) lines.push_back(cur);
+        if (e.line - 1 < (int)lines.size()) {
+            std::string row = lines[e.line - 1];
+            out += "\n  | " + row;
+            if (e.col >= 0 && e.col < (int)row.size())
+                out += "\n  | " + std::string(e.col, ' ') + "^";
+        }
+    }
+    return out;
+}
+
 int runSource(const std::string& src, const std::vector<std::string>& argv,
               const std::string& script_dir, const std::string& filename, bool catch_exit,
               bool dbg, const std::string& dbg_file) {
@@ -5056,14 +5157,39 @@ int runFileDbg(const std::string& path, const std::vector<std::string>& argv) {
     return runSource(src, argv, parentDir(path), path, true, true, path);
 }
 
-// REPL 行读取（Windows 逐字符），Tab 补全内置名
+// REPL 行读取（Windows 逐字符），Tab 补全内置名，上下键浏览历史
 static std::string replReadLine() {
+    static std::vector<std::string> history;
+    static size_t hist_idx = 0;
     std::string line;
     while (true) {
         int ch = _getch();
         if (ch == '\r' || ch == '\n') {
             std::cout << "\n";
+            if (!line.empty()) {
+                history.push_back(line);
+                hist_idx = history.size();
+            }
             return line;
+        }
+        if (ch == 0xE0 || ch == 0) {  // 方向键 / 功能键前缀
+            int k = _getch();
+            if (k == 72) {  // Up：上一条历史
+                if (hist_idx > 0) {
+                    --hist_idx;
+                    for (size_t i = 0; i < line.size(); ++i) std::cout << "\b \b";
+                    line = history[hist_idx];
+                    std::cout << line;
+                }
+            } else if (k == 80) {  // Down：下一条历史
+                if (hist_idx < history.size()) {
+                    ++hist_idx;
+                    for (size_t i = 0; i < line.size(); ++i) std::cout << "\b \b";
+                    line = (hist_idx < history.size()) ? history[hist_idx] : "";
+                    std::cout << line;
+                }
+            }
+            continue;
         }
         if (ch == '\t') {
             // 找行内最后一个以 # 开头的 token
