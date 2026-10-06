@@ -149,7 +149,7 @@ bool truthy(const Value& v) {
 
 // float 的字符串表示：整数化输出整数；否则最短表示（同 Python str()）
 static std::string floatToStr(double f) {
-    if (f == (double)(int64_t)f && std::abs(f) < 1e15) {
+    if (std::abs(f) < 9e18 && f == (double)(int64_t)f && std::abs(f) < 1e15) {
         return std::to_string((int64_t)f);
     }
     char buf[64];
@@ -652,6 +652,7 @@ std::vector<Token> lexExpr(const std::string& s, int ln) {
             else if (two == "-=") { t.kind = TK_MINUSEQ; t.value = "-"; }
             else if (two == "*=") { t.kind = TK_STAREQ; t.value = "*"; }
             else if (two == "/=") { t.kind = TK_SLASHEQ; t.value = "/"; }
+            else if (two == "**") { t.kind = TK_POW; t.value = "**"; }
             else if (two == "./") { t.kind = TK_IDIV; t.value = "./"; }
             else if (two == "/.") { t.kind = TK_FDIV; t.value = "/."; }
             else if (two == "/-") { t.kind = TK_MOD; t.value = "/-"; }
@@ -859,6 +860,7 @@ static std::string binopName(const std::string& sym) {
     if (sym == "+") return "PLUS";
     if (sym == "-") return "MINUS";
     if (sym == "*") return "STAR";
+    if (sym == "**") return "POW";
     if (sym == "/") return "SLASH";
     if (sym == "==") return "==";
     if (sym == "!=") return "!=";
@@ -999,7 +1001,19 @@ private:
             auto e = std::make_shared<Expr>(); e->k = Expr::K::NEG; e->a = unary();
             return e;
         }
-        return postfix();
+        return power();
+    }
+
+    // ** 幂运算（右结合）：2**3**2 = 2**(3**2)；-2**2 = -(2**2)
+    std::shared_ptr<Expr> power() {
+        auto l = postfix();
+        if (peek().kind == TK_POW) {
+            advance();
+            auto r = unary();   // 右侧递归 unary：右结合 + 支持 -x / 嵌套幂
+            auto e = std::make_shared<Expr>(); e->k = Expr::K::BIN; e->op = "POW"; e->a = l; e->b = r;
+            return e;
+        }
+        return l;
     }
 
     std::shared_ptr<Expr> postfix() {
@@ -1022,7 +1036,11 @@ private:
             auto e = std::make_shared<Expr>();
             e->k = Expr::K::NUM;
             if (t.value.find('.') != std::string::npos) { e->is_float = true; e->fnum = std::stod(t.value); }
-            else { e->is_float = false; e->inum = std::stoll(t.value); }
+            else {
+                e->is_float = false;
+                try { e->inum = std::stoll(t.value); }
+                catch (...) { e->is_float = true; e->fnum = std::stod(t.value); }  // 超 int64 回退 double，避免崩溃
+            }
             return e;
         }
         if (t.kind == TK_STRING) {
@@ -1945,6 +1963,10 @@ Value Interp::binop(const std::string& op, const Value& l, const Value& r) {
     }
     if (op == "MINUS") { numOnly(l, r); return numArith(l, r, '-'); }
     if (op == "STAR") { numOnly(l, r); return numArith(l, r, '*'); }
+    if (op == "POW") {
+        numOnly(l, r);
+        return mkFloat(std::pow(numVal(l), numVal(r)));
+    }
     if (op == "SLASH") {
         numOnly(l, r);
         double b = numVal(r);
