@@ -163,6 +163,11 @@ Tier 3 (1.2) — **Data / Crypto / Process / FFI**:
 - **Crypto**: `#sha256`, `#aes_encrypt` / `#aes_decrypt` (AES-256-CBC + PKCS7)
 - **Process**: `#proc_run(cmd)` (returns `{exit; output}`)
 - **FFI**: `#ffi_call("dll"; "func"; arg...)` — call system library functions directly
+Tier 4 (1.3) — **Big integers & Math**:
+- **BIG**: integer literals beyond int64 stay exact (`'1254156454178189456478' * '2154418542154548741657'` = exact 44-digit product), int64 overflow auto-promotes to BIG, all `+ - * ./ /- **` are exact on integers, JSON keeps big numbers, `#type` = `big` (and `#is_int` is true)
+- **Math**: `#pi` / `#e` constants, `#log2`, `#asin` / `#acos` / `#atan` / `#atan2`, `#sinh` / `#cosh` / `#tanh` / `#asinh` / `#acosh` / `#atanh`
+- **Exact combinatorics**: `#fact(n)` / `#comb(n;k)` / `#perm(n;k)` / `#gcd(a;b)` / `#lcm(a;b)` (all arbitrary precision)
+- **Calculus**: `#integral("fn"; a; b; n)` Simpson rule (n default 1000), `#deriv("fn"; x; h)` central difference, `#series("fn"; n)` exact integer summation (Σ f(i), i=1..n)
 ## Standard library
 
 Modules live in `C:\Vesna\lib\` (or ship with this repo), used via `import xxx`:

@@ -52,7 +52,16 @@ namespace vesna {
 
 static std::string parentDir(const std::string& path);
 static std::string strFloat(double f);
-const std::string VERSION = "2.9.0";
+// 前向声明：大整数（BIG）辅助（定义见数值运算区）
+static std::string bigNormalize(const std::string& s);
+static std::string intToBig(int64_t i);
+static double numVal(const Value& v);
+static std::string bigAdd(const std::string& a, const std::string& b);
+static std::string bigSub(const std::string& a, const std::string& b);
+static std::string bigMul(const std::string& a, const std::string& b);
+static std::string bigPow(const std::string& a, int64_t n);
+static Value bigToValue(const std::string& n);
+const std::string VERSION = "2.10.0";
 
 
 // ============================================================
@@ -83,18 +92,26 @@ Value mkNone() { return Value(); }
 Value mkBool(bool b) { Value v; v.v = b; return v; }
 Value mkInt(int64_t i) { Value v; v.v = i; return v; }
 Value mkFloat(double f) { Value v; v.v = f; return v; }
+Value mkBig(std::string s) { Value v; v.v = std::make_shared<std::string>(std::move(s)); return v; }
 Value mkStr(std::string s) { Value v; v.v = std::move(s); return v; }
 Value mkList() { Value v; v.v = std::make_shared<ListVal>(); return v; }
 Value mkGroup() { Value v; v.v = std::make_shared<GroupVal>(); return v; }
 Value mkDict() { Value v; v.v = std::make_shared<DictVal>(); return v; }
 
 bool isNum(const Value& v) {
-    return v.t() == Value::T::INT || v.t() == Value::T::FLOAT;
+    return v.t() == Value::T::INT || v.t() == Value::T::FLOAT || v.t() == Value::T::BIG;
 }
 
 bool vesnaEq(const Value& a, const Value& b) {
     if (a.t() != b.t()) {
         if (isNum(a) && isNum(b)) {
+            if (a.t() == Value::T::BIG || b.t() == Value::T::BIG) {
+                if (a.t() == Value::T::FLOAT || b.t() == Value::T::FLOAT)
+                    return numVal(a) == numVal(b);
+                std::string x = a.t() == Value::T::BIG ? bigNormalize(a.bg()) : intToBig(a.i());
+                std::string y = b.t() == Value::T::BIG ? bigNormalize(b.bg()) : intToBig(b.i());
+                return x == y;
+            }
             if (a.t() == Value::T::INT && b.t() == Value::T::INT) return a.i() == b.i();
             double x = (a.t() == Value::T::INT) ? (double)a.i() : a.f();
             double y = (b.t() == Value::T::INT) ? (double)b.i() : b.f();
@@ -107,6 +124,7 @@ bool vesnaEq(const Value& a, const Value& b) {
         case Value::T::BOOL: return a.b() == b.b();
         case Value::T::INT: return a.i() == b.i();
         case Value::T::FLOAT: return a.f() == b.f();
+        case Value::T::BIG: return bigNormalize(a.bg()) == bigNormalize(b.bg());
         case Value::T::STR: return a.s() == b.s();
         case Value::T::LIST:
         case Value::T::GROUP: {
@@ -139,6 +157,7 @@ bool truthy(const Value& v) {
         case Value::T::BOOL: return v.b();
         case Value::T::INT: return v.i() != 0;
         case Value::T::FLOAT: return v.f() != 0.0;
+        case Value::T::BIG: return bigNormalize(v.bg()) != "0";
         case Value::T::STR: return !v.s().empty();
         case Value::T::LIST: return !v.list()->items.empty();
         case Value::T::GROUP: return !v.group()->items.empty();
@@ -164,6 +183,7 @@ std::string fmt(const Value& v) {
         case Value::T::BOOL: return v.b() ? "true" : "false";
         case Value::T::INT: return "'" + std::to_string(v.i()) + "'";
         case Value::T::FLOAT: return "'" + floatToStr(v.f()) + "'";
+        case Value::T::BIG: return "'" + v.bg() + "'";
         case Value::T::STR: return v.s();
         case Value::T::LIST: {
             std::string out = "[";
@@ -199,6 +219,7 @@ std::string typeName(const Value& v) {
         case Value::T::BOOL: return "bool";
         case Value::T::INT: return "int";
         case Value::T::FLOAT: return "float";
+        case Value::T::BIG: return "big";
         case Value::T::STR: return "str";
         case Value::T::LIST: return "list";
         case Value::T::GROUP: return "group";
@@ -1038,8 +1059,9 @@ private:
             if (t.value.find('.') != std::string::npos) { e->is_float = true; e->fnum = std::stod(t.value); }
             else {
                 e->is_float = false;
+                e->is_big = false;
                 try { e->inum = std::stoll(t.value); }
-                catch (...) { e->is_float = true; e->fnum = std::stod(t.value); }  // 超 int64 回退 double，避免崩溃
+                catch (...) { e->is_big = true; e->str = bigNormalize(t.value); }  // 超 int64 -> 精确大整数
             }
             return e;
         }
@@ -1472,20 +1494,47 @@ static const std::unordered_map<std::string, std::string> COMPOUND_OP = {
 
 static Value numArith(const Value& l, const Value& r, char op) {
     bool fl = l.t() == Value::T::FLOAT, fr = r.t() == Value::T::FLOAT;
-    if (!fl && !fr) {
-        int64_t a = l.i(), b = r.i();
+    if (fl || fr) {
+        double a = fl ? l.f() : numVal(l);
+        double b = fr ? r.f() : numVal(r);
         switch (op) {
-            case '+': return mkInt(a + b);
-            case '-': return mkInt(a - b);
-            case '*': return mkInt(a * b);
+            case '+': return mkFloat(a + b);
+            case '-': return mkFloat(a - b);
+            case '*': return mkFloat(a * b);
         }
+        return mkNone();
     }
-    double a = fl ? l.f() : (double)l.i();
-    double b = fr ? r.f() : (double)r.i();
+    // 全整数（INT/BIG）：BIG 参与或 int64 溢出时精确大整数运算
+    if (l.t() == Value::T::BIG || r.t() == Value::T::BIG) {
+        std::string a = l.t() == Value::T::BIG ? bigNormalize(l.bg()) : intToBig(l.i());
+        std::string b = r.t() == Value::T::BIG ? bigNormalize(r.bg()) : intToBig(r.i());
+        std::string res;
+        switch (op) {
+            case '+': res = bigAdd(a, b); break;
+            case '-': res = bigSub(a, b); break;
+            case '*': res = bigMul(a, b); break;
+            default: return mkNone();
+        }
+        return bigToValue(res);
+    }
+    int64_t a = l.i(), b = r.i();
     switch (op) {
-        case '+': return mkFloat(a + b);
-        case '-': return mkFloat(a - b);
-        case '*': return mkFloat(a * b);
+        case '+': {
+            if ((b > 0 && a > INT64_MAX - b) || (b < 0 && a < INT64_MIN - b))
+                return bigToValue(bigAdd(intToBig(a), intToBig(b)));
+            return mkInt(a + b);
+        }
+        case '-': {
+            if ((b < 0 && a > INT64_MAX + b) || (b > 0 && a < INT64_MIN + b))
+                return bigToValue(bigSub(intToBig(a), intToBig(b)));
+            return mkInt(a - b);
+        }
+        case '*': {
+            double approx = (double)a * (double)b;
+            if (approx >= 9.0e18 || approx <= -9.0e18)
+                return bigToValue(bigMul(intToBig(a), intToBig(b)));
+            return mkInt(a * b);
+        }
     }
     return mkNone();
 }
@@ -1504,7 +1553,175 @@ static void numOnlyCmp(const Value& a, const Value& b) {
 }
 
 static double numVal(const Value& v) {
-    return v.t() == Value::T::INT ? (double)v.i() : v.f();
+    if (v.t() == Value::T::INT) return (double)v.i();
+    if (v.t() == Value::T::BIG) {
+        try { return std::stod(v.bg()); }
+        catch (...) { return v.bg()[0] == '-' ? -HUGE_VAL : HUGE_VAL; }
+    }
+    return v.f();
+}
+
+// ============================================================
+// 大整数（BIG）：十进制字符串任意精度（无第三方依赖）
+// 存储：规范十进制串，可带 '-' 前缀，无前导零，"0" 固定
+// ============================================================
+static std::string bigNormalize(const std::string& s) {
+    if (s.empty()) return "0";
+    bool neg = s[0] == '-';
+    std::string digits = neg ? s.substr(1) : s;
+    size_t i = 0;
+    while (i + 1 < digits.size() && digits[i] == '0') ++i;
+    digits = digits.substr(i);
+    if (digits.empty()) return "0";
+    return neg ? "-" + digits : digits;
+}
+static std::string intToBig(int64_t i) { return std::to_string(i); }
+static int bigAbsCmp(const std::string& a, const std::string& b) {   // |a| vs |b|：1 / -1 / 0
+    std::string x = bigNormalize(a), y = bigNormalize(b);
+    if (!x.empty() && x[0] == '-') x = x.substr(1);
+    if (!y.empty() && y[0] == '-') y = y.substr(1);
+    if (x.size() != y.size()) return x.size() > y.size() ? 1 : -1;
+    if (x == y) return 0;
+    return x > y ? 1 : -1;
+}
+static int bigCmpSigned(const std::string& a, const std::string& b) {  // 带符号：1 / -1 / 0
+    std::string x = bigNormalize(a), y = bigNormalize(b);
+    bool na = x[0] == '-', nb = y[0] == '-';
+    if (na != nb) return na ? -1 : 1;
+    int c = bigAbsCmp(x, y);
+    return na ? -c : c;
+}
+static std::string bigAddAbs(const std::string& a, const std::string& b) {   // |a|+|b|
+    std::string x = bigNormalize(a), y = bigNormalize(b);
+    if (!x.empty() && x[0] == '-') x = x.substr(1);
+    if (!y.empty() && y[0] == '-') y = y.substr(1);
+    std::string r; int carry = 0;
+    size_t i = x.size(), j = y.size();
+    while (i || j || carry) {
+        int d = carry;
+        if (i) d += x[--i] - '0';
+        if (j) d += y[--j] - '0';
+        r.insert(r.begin(), char('0' + d % 10));
+        carry = d / 10;
+    }
+    return bigNormalize(r);
+}
+static std::string bigSubAbs(const std::string& a, const std::string& b) {   // |a|-|b|（要求 |a|>=|b|）
+    std::string x = bigNormalize(a), y = bigNormalize(b);
+    if (!x.empty() && x[0] == '-') x = x.substr(1);
+    if (!y.empty() && y[0] == '-') y = y.substr(1);
+    std::string r; int borrow = 0;
+    size_t i = x.size(), j = y.size();
+    while (i) {
+        int d = (x[--i] - '0') - borrow;
+        if (j) d -= (y[--j] - '0');
+        if (d < 0) { d += 10; borrow = 1; } else borrow = 0;
+        r.insert(r.begin(), char('0' + d));
+    }
+    return bigNormalize(r);
+}
+static std::string bigAdd(const std::string& a, const std::string& b) {
+    std::string x = bigNormalize(a), y = bigNormalize(b);
+    bool na = x[0] == '-', nb = y[0] == '-';
+    if (na == nb) {
+        std::string r = bigAddAbs(x, y);
+        return (na && r != "0") ? "-" + r : r;
+    }
+    int c = bigAbsCmp(x, y);
+    if (c == 0) return "0";
+    std::string r = (c > 0) ? bigSubAbs(x, y) : bigSubAbs(y, x);
+    bool neg = (c > 0) ? na : nb;
+    return (neg && r != "0") ? "-" + r : r;
+}
+static std::string bigSub(const std::string& a, const std::string& b) {
+    std::string x = bigNormalize(a), y = bigNormalize(b);
+    std::string nb = (y[0] == '-') ? y.substr(1) : "-" + y;
+    return bigAdd(x, bigNormalize(nb));
+}
+static std::string bigNeg(const std::string& a) {
+    std::string z = bigNormalize(a);
+    if (z == "0") return "0";
+    return z[0] == '-' ? z.substr(1) : "-" + z;
+}
+static std::string bigMul(const std::string& a, const std::string& b) {
+    std::string x = bigNormalize(a), y = bigNormalize(b);
+    bool neg = (x[0] == '-') != (y[0] == '-');
+    if (x[0] == '-') x = x.substr(1);
+    if (y[0] == '-') y = y.substr(1);
+    if (x == "0" || y == "0") return "0";
+    std::vector<int> acc(x.size() + y.size(), 0);
+    for (size_t i = 0; i < x.size(); ++i)
+        for (size_t j = 0; j < y.size(); ++j)
+            acc[i + j] += (x[x.size() - 1 - i] - '0') * (y[y.size() - 1 - j] - '0');
+    for (size_t k = 0; k + 1 < acc.size(); ++k) { acc[k + 1] += acc[k] / 10; acc[k] %= 10; }
+    size_t top = acc.size();
+    while (top > 1 && acc[top - 1] == 0) --top;
+    std::string r;
+    for (size_t k = top; k-- > 0;) r += char('0' + acc[k]);
+    return neg ? "-" + r : r;
+}
+// 长除法：|a| / |b| -> (商, 余数)，调用方保证 b != 0
+static std::pair<std::string, std::string> bigDivModAbs(const std::string& a, const std::string& b) {
+    std::string x = bigNormalize(a), y = bigNormalize(b);
+    if (x[0] == '-') x = x.substr(1);
+    if (y[0] == '-') y = y.substr(1);
+    std::string q, rem = "0";
+    for (char c : x) {
+        rem = bigAddAbs(rem + "0", std::string(1, c));
+        int qd = 0;
+        while (bigAbsCmp(rem, y) >= 0) { rem = bigSubAbs(rem, y); ++qd; }
+        q += char('0' + qd);
+    }
+    return { bigNormalize(q), bigNormalize(rem) };
+}
+static std::string bigDivTrunc(const std::string& a, const std::string& b) {   // 整除，截断向零
+    std::string x = bigNormalize(a), y = bigNormalize(b);
+    bool na = x[0] == '-', nb = y[0] == '-';
+    std::string q = bigDivModAbs(x, y).first;
+    bool neg = na != nb;
+    return (neg && q != "0") ? "-" + q : q;
+}
+static std::string bigModPy(const std::string& a, const std::string& b) {   // 取模（Python 语义：余数与除数同号）
+    std::string x = bigNormalize(a), y = bigNormalize(b);
+    bool na = x[0] == '-', nb = y[0] == '-';
+    std::string r = bigDivModAbs(x, y).second;
+    if (r == "0") return "0";
+    if (na != nb) r = bigAdd(r, y);   // 截断余数符号 = 被除数符号，与除数异号时修正
+    return r;
+}
+static std::string bigGcd(const std::string& a, const std::string& b) {   // |a|、|b| 的欧几里得最大公约数
+    std::string x = bigNormalize(a), y = bigNormalize(b);
+    if (!x.empty() && x[0] == '-') x = x.substr(1);
+    if (!y.empty() && y[0] == '-') y = y.substr(1);
+    while (y != "0") {
+        std::string t = bigModPy(x, y);
+        x = y;
+        y = t;
+    }
+    return x;
+}
+static std::string bigPow(const std::string& a, int64_t n) {   // n >= 0，二进制快速幂
+    if (n == 0) return "1";
+    std::string base = bigNormalize(a), result = "1";
+    while (n > 0) {
+        if (n & 1) result = bigMul(result, base);
+        n >>= 1;
+        if (n) base = bigMul(base, base);
+    }
+    return result;
+}
+// BIG 结果转 Value：int64 范围内回 INT，否则保持 BIG
+static Value bigToValue(const std::string& n) {
+    std::string z = bigNormalize(n);
+    if (z == "0") return mkInt(0);
+    bool neg = z[0] == '-';
+    std::string d = neg ? z.substr(1) : z;
+    if (d.size() < 19) return mkInt(std::stoll(z));
+    if (d.size() == 19) {
+        if (!neg && d <= "9223372036854775807") return mkInt(std::stoll(z));
+        if (neg && d <= "9223372036854775808") return mkInt(std::stoll(z));
+    }
+    return mkBig(z);
 }
 
 static int64_t pyModInt(int64_t a, int64_t b) {
@@ -1853,6 +2070,7 @@ void Interp::assign(int64_t nid, const std::shared_ptr<Expr>& idx,
 Value Interp::eval(const std::shared_ptr<Expr>& e, const std::shared_ptr<Env>& env) {
     switch (e->k) {
         case Expr::K::NUM:
+            if (e->is_big) return mkBig(e->str);
             return e->is_float ? mkFloat(e->fnum) : mkInt(e->inum);
         case Expr::K::STR:
             return mkStr(e->str);
@@ -1871,7 +2089,9 @@ Value Interp::eval(const std::shared_ptr<Expr>& e, const std::shared_ptr<Env>& e
         case Expr::K::NEG: {
             Value v = eval(e->a, env);
             if (v.t() == Value::T::BOOL || !isNum(v)) throw VesnaError("一元负号只能用于数字");
-            return v.t() == Value::T::INT ? mkInt(-v.i()) : mkFloat(-v.f());
+            if (v.t() == Value::T::INT) return mkInt(-v.i());
+            if (v.t() == Value::T::BIG) return mkBig(bigNeg(v.bg()));
+            return mkFloat(-v.f());
         }
         case Expr::K::NOT:
             return mkBool(!truthy(eval(e->a, env)));
@@ -1943,6 +2163,13 @@ Value Interp::eval(const std::shared_ptr<Expr>& e, const std::shared_ptr<Env>& e
 
 static bool valueLess(const Value& a, const Value& b) {
     if (isNum(a) && isNum(b)) {
+        if (a.t() == Value::T::BIG || b.t() == Value::T::BIG) {
+            if (a.t() == Value::T::FLOAT || b.t() == Value::T::FLOAT)
+                return numVal(a) < numVal(b);
+            std::string x = a.t() == Value::T::BIG ? bigNormalize(a.bg()) : intToBig(a.i());
+            std::string y = b.t() == Value::T::BIG ? bigNormalize(b.bg()) : intToBig(b.i());
+            return bigCmpSigned(x, y) < 0;
+        }
         if (a.t() == Value::T::INT && b.t() == Value::T::INT) return a.i() < b.i();
         return numVal(a) < numVal(b);
     }
@@ -1965,7 +2192,24 @@ Value Interp::binop(const std::string& op, const Value& l, const Value& r) {
     if (op == "STAR") { numOnly(l, r); return numArith(l, r, '*'); }
     if (op == "POW") {
         numOnly(l, r);
-        return mkFloat(std::pow(numVal(l), numVal(r)));
+        // 整数底 + 非负整数指数 -> 精确（INT/BIG）
+        bool lInt = l.t() == Value::T::INT || l.t() == Value::T::BIG;
+        bool rInt = r.t() == Value::T::INT || r.t() == Value::T::BIG;
+        if (lInt && rInt) {
+            std::string base = l.t() == Value::T::BIG ? bigNormalize(l.bg()) : intToBig(l.i());
+            if (r.t() == Value::T::INT) {
+                int64_t n = r.i();
+                if (n >= 0 && n <= 100000) return bigToValue(bigPow(base, n));
+            } else {
+                double d = numVal(r);
+                if (d >= 0 && d <= 100000 && d == (double)(int64_t)d) return bigToValue(bigPow(base, (int64_t)d));
+            }
+        }
+        double x = numVal(l), y = numVal(r);
+        if (x < 0 && std::floor(y) != y) throw VesnaError("结果为复数，不支持");
+        double rr = std::pow(x, y);
+        if (std::isnan(rr) || std::isinf(rr)) throw VesnaError("无法计算");
+        return mkFloat(rr);
     }
     if (op == "SLASH") {
         numOnly(l, r);
@@ -1975,6 +2219,12 @@ Value Interp::binop(const std::string& op, const Value& l, const Value& r) {
     }
     if (op == "./") {  // 整除，截断向零
         numOnly(l, r);
+        if (l.t() == Value::T::BIG || r.t() == Value::T::BIG) {
+            std::string a = l.t() == Value::T::BIG ? bigNormalize(l.bg()) : intToBig(l.i());
+            std::string b = r.t() == Value::T::BIG ? bigNormalize(r.bg()) : intToBig(r.i());
+            if (bigNormalize(b) == "0") throw VesnaError("除数不能为 0");
+            return bigToValue(bigDivTrunc(a, b));
+        }
         double b = numVal(r);
         if (b == 0) throw VesnaError("除数不能为 0");
         return mkInt((int64_t)(numVal(l) / b));
@@ -1988,6 +2238,12 @@ Value Interp::binop(const std::string& op, const Value& l, const Value& r) {
     }
     if (op == "/-") {  // 取模（Python 语义）
         numOnly(l, r);
+        if (l.t() == Value::T::BIG || r.t() == Value::T::BIG) {
+            std::string a = l.t() == Value::T::BIG ? bigNormalize(l.bg()) : intToBig(l.i());
+            std::string b = r.t() == Value::T::BIG ? bigNormalize(r.bg()) : intToBig(r.i());
+            if (bigNormalize(b) == "0") throw VesnaError("除数不能为 0");
+            return bigToValue(bigModPy(a, b));
+        }
         double b = numVal(r);
         if (b == 0) throw VesnaError("除数不能为 0");
         if (l.t() == Value::T::INT && r.t() == Value::T::INT) return mkInt(pyModInt(l.i(), r.i()));
@@ -2117,13 +2373,23 @@ Value Interp::into(const std::string& t, const Value& v) {
         if (v.t() == Value::T::BOOL) return mkInt(v.b() ? 1 : 0);
         if (v.t() == Value::T::INT) return v;
         if (v.t() == Value::T::FLOAT) return mkInt((int64_t)v.f());
+        if (v.t() == Value::T::BIG) {
+            std::string z = bigNormalize(v.bg());
+            bool neg = z[0] == '-';
+            std::string d = neg ? z.substr(1) : z;
+            if (d.size() < 19 || (d.size() == 19 &&
+                (neg ? d <= "9223372036854775808" : d <= "9223372036854775807")))
+                return mkInt(std::stoll(z));
+            throw VesnaError("无法转成 int（超出 64 位范围）: " + z);
+        }
         if (v.t() == Value::T::STR) {
             try {
                 std::string s = trimStr(v.s());
                 if (s.find('.') != std::string::npos || s.find('e') != std::string::npos ||
                     s.find('E') != std::string::npos)
                     return mkInt((int64_t)std::stod(s));
-                return mkInt(std::stoll(s));
+                try { return mkInt(std::stoll(s)); }
+                catch (const std::out_of_range&) { return mkBig(bigNormalize(s)); }   // 仅溢出转 BIG
             } catch (...) {
                 throw VesnaError("无法转成 int: " + v.s());
             }
@@ -2134,12 +2400,17 @@ Value Interp::into(const std::string& t, const Value& v) {
         if (v.t() == Value::T::STR) return v;
         if (v.t() == Value::T::BOOL) return mkStr(v.b() ? "true" : "false");
         if (v.t() == Value::T::INT) return mkStr(std::to_string(v.i()));
+        if (v.t() == Value::T::BIG) return mkStr(v.bg());
         if (v.t() == Value::T::FLOAT) return mkStr(strFloat(v.f()));
         return mkStr(fmt(v));
     }
     if (t == "float") {
         if (v.t() == Value::T::BOOL) return mkFloat(v.b() ? 1.0 : 0.0);
         if (v.t() == Value::T::INT) return mkFloat((double)v.i());
+        if (v.t() == Value::T::BIG) {
+            try { return mkFloat(std::stod(v.bg())); }
+            catch (...) { throw VesnaError("无法转成 float: " + v.bg()); }
+        }
         if (v.t() == Value::T::FLOAT) return v;
         if (v.t() == Value::T::STR) {
             try { return mkFloat(std::stod(v.s())); }
@@ -2589,6 +2860,7 @@ static std::string jsonWrite(const Value& v) {
                 n.find('E') == std::string::npos) n += ".0";
             return n;
         }
+        case Value::T::BIG: return v.bg();
         case Value::T::STR: return jsonEscape(v.s());
         case Value::T::LIST: case Value::T::GROUP: {
             const auto& items = v.t() == Value::T::LIST ? v.list()->items : v.group()->items;
@@ -2707,9 +2979,7 @@ struct JsonParser {
             try { return mkFloat(std::stod(num)); } catch (...) { fail = true; return mkNone(); }
         }
         try { return mkInt(std::stoll(num)); }
-        catch (...) {
-            try { return mkFloat(std::stod(num)); } catch (...) { fail = true; return mkNone(); }
-        }
+        catch (...) { return mkBig(bigNormalize(num)); }  // 超 int64 -> 精确大整数
     }
     Value parseArray() {
         ++pos;
@@ -2784,7 +3054,11 @@ const std::vector<std::pair<std::string, int>> g_builtinNames = {
     {"udp_open",194},{"udp_send",195},{"udp_recv",196},{"udp_close",197},{"dns_lookup",198},
     {"thread_id",199},{"sem_open",200},{"sem_wait",201},{"sem_post",202},{"sem_close",203},{"crc32",204},{"adler32",205},
     {"dir_walk",206},{"hash_file",207},{"download",208},{"version",209},{"disk_free",210},
-    {"rand_str",211},{"url_parse",212},{"clip_get",213},{"clip_set",214},{"readline",215}
+    {"rand_str",211},{"url_parse",212},{"clip_get",213},{"clip_set",214},{"readline",215},
+    {"pi",216},{"e",217},{"log2",218},{"asin",219},{"acos",220},{"atan",221},{"atan2",222},
+    {"sinh",223},{"cosh",224},{"tanh",225},{"asinh",226},{"acosh",227},{"atanh",228},
+    {"fact",229},{"comb",230},{"perm",231},{"gcd",232},{"lcm",233},
+    {"integral",234},{"deriv",235},{"series",236}
 };
 
 
@@ -3455,6 +3729,188 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
         return mkStr(line);
     }
 
+    // ---- 数学常量与函数（含精确大整数与微积分）----
+    case 216: return mkFloat(3.141592653589793238462643383279502884);       // pi
+    case 217: return mkFloat(2.718281828459045235360287471352662498);       // e
+    case 218: {                                                              // -log2(x)
+        Value v = ev(0);
+        if (v.t() == Value::T::BOOL || !isNum(v)) throw VesnaError("-log2 需要数字");
+        double x = numVal(v);
+        if (x <= 0) throw VesnaError("-log2 参数必须为正");
+        return mkFloat(std::log2(x));
+    }
+    case 219: {  // -asin(x)
+        double x = numVal(ev(0));
+        double r = std::asin(x);
+        if (std::isnan(r)) throw VesnaError("-asin 参数超出 [-1,1]");
+        return mkFloat(r);
+    }
+    case 220: {  // -acos(x)
+        double x = numVal(ev(0));
+        double r = std::acos(x);
+        if (std::isnan(r)) throw VesnaError("-acos 参数超出 [-1,1]");
+        return mkFloat(r);
+    }
+    case 221: return mkFloat(std::atan(numVal(ev(0))));                     // -atan(x)
+    case 222: return mkFloat(std::atan2(numVal(ev(0)), numVal(ev(1))));     // -atan2(y; x)
+    case 223: return mkFloat(std::sinh(numVal(ev(0))));                     // -sinh(x)
+    case 224: return mkFloat(std::cosh(numVal(ev(0))));                     // -cosh(x)
+    case 225: return mkFloat(std::tanh(numVal(ev(0))));                     // -tanh(x)
+    case 226: return mkFloat(std::asinh(numVal(ev(0))));                    // -asinh(x)
+    case 227: {  // -acosh(x)
+        double x = numVal(ev(0));
+        if (x < 1) throw VesnaError("-acosh 参数必须 >= 1");
+        return mkFloat(std::acosh(x));
+    }
+    case 228: {  // -atanh(x)
+        double x = numVal(ev(0));
+        if (x <= -1 || x >= 1) throw VesnaError("-atanh 参数必须在 (-1,1) 内");
+        return mkFloat(std::atanh(x));
+    }
+    case 229: {  // -fact(n) 精确阶乘（BIG）
+        Value v = ev(0);
+        if (v.t() == Value::T::BOOL || (v.t() != Value::T::INT && v.t() != Value::T::BIG))
+            throw VesnaError("-fact 需要整数");
+        double d = numVal(v);
+        if (d < 0 || d > 10000 || d != std::floor(d)) throw VesnaError("-fact 需要 0~10000 的整数");
+        int64_t n = (int64_t)d;
+        std::string r = "1";
+        for (int64_t i = 2; i <= n; ++i) r = bigMul(r, intToBig(i));
+        return bigToValue(r);
+    }
+    case 230: {  // -comb(n; k) 组合数（精确）
+        double dn = numVal(ev(0)), dk = numVal(ev(1));
+        if (dn < 0 || dk < 0 || dn != std::floor(dn) || dk != std::floor(dk) || dn > 1e7 || dk > dn)
+            throw VesnaError("-comb 需要 0<=k<=n 的整数");
+        int64_t n = (int64_t)dn, k = (int64_t)dk;
+        if (k > n - k) k = n - k;
+        std::string r = "1";
+        for (int64_t i = 1; i <= k; ++i) {
+            r = bigMul(r, intToBig(n - k + i));
+            r = bigDivTrunc(r, intToBig(i));
+        }
+        return bigToValue(r);
+    }
+    case 231: {  // -perm(n; k) 排列数（精确）
+        double dn = numVal(ev(0)), dk = numVal(ev(1));
+        if (dn < 0 || dk < 0 || dn != std::floor(dn) || dk != std::floor(dk) || dn > 1e7 || dk > dn)
+            throw VesnaError("-perm 需要 0<=k<=n 的整数");
+        int64_t n = (int64_t)dn, k = (int64_t)dk;
+        std::string r = "1";
+        for (int64_t i = 0; i < k; ++i) r = bigMul(r, intToBig(n - i));
+        return bigToValue(r);
+    }
+    case 232: {  // -gcd(a; b) 精确最大公约数
+        Value a = ev(0), b = ev(1);
+        if (a.t() == Value::T::BOOL || !isNum(a) || b.t() == Value::T::BOOL || !isNum(b))
+            throw VesnaError("-gcd 需要整数");
+        if (a.t() == Value::T::FLOAT || b.t() == Value::T::FLOAT) {
+            double x = numVal(a), y = numVal(b);
+            if (x != std::floor(x) || y != std::floor(y)) throw VesnaError("-gcd 需要整数");
+            int64_t ia = (int64_t)x, ib = (int64_t)y;
+            while (ib) { int64_t t = ib; ib = pyModInt(ia, ib); ia = t; }
+            return mkInt(ia < 0 ? -ia : ia);
+        }
+        std::string x = a.t() == Value::T::BIG ? a.bg() : intToBig(a.i());
+        std::string y = b.t() == Value::T::BIG ? b.bg() : intToBig(b.i());
+        std::string g = bigGcd(x, y);
+        return bigToValue(bigNormalize(g));
+    }
+    case 233: {  // -lcm(a; b) 精确最小公倍数
+        Value a = ev(0), b = ev(1);
+        if (a.t() == Value::T::BOOL || !isNum(a) || b.t() == Value::T::BOOL || !isNum(b))
+            throw VesnaError("-lcm 需要整数");
+        if (a.t() == Value::T::FLOAT || b.t() == Value::T::FLOAT) {
+            double x = numVal(a), y = numVal(b);
+            if (x != std::floor(x) || y != std::floor(y)) throw VesnaError("-lcm 需要整数");
+            int64_t ia = (int64_t)x, ib = (int64_t)y;
+            if (ia == 0 || ib == 0) return mkInt(0);
+            int64_t aa = ia < 0 ? -ia : ia, bb = ib < 0 ? -ib : ib;
+            int64_t p = aa, q = bb;
+            while (q) { int64_t t = q; q = pyModInt(p, q); p = t; }
+            return mkInt(aa / p * bb);
+        }
+        std::string x = a.t() == Value::T::BIG ? a.bg() : intToBig(a.i());
+        std::string y = b.t() == Value::T::BIG ? b.bg() : intToBig(b.i());
+        if (bigNormalize(x) == "0" || bigNormalize(y) == "0") return mkInt(0);
+        std::string g = bigGcd(x, y);
+        std::string l = bigDivTrunc(bigMul(x, y), g);
+        std::string z = bigNormalize(l);
+        return bigToValue(z[0] == '-' ? z.substr(1) : z);
+    }
+    case 234: {  // -integral(fname; a; b; n) Simpson 数值定积分
+        Value fnV = ev(0);
+        if (fnV.t() != Value::T::STR) throw VesnaError("-integral 第一个参数需要函数名字符串");
+        std::string fname = fnV.s();
+        double a = numVal(ev(1)), b = numVal(ev(2));
+        int64_t n = 1000;
+        if (argc() > 3) {
+            Value nv = ev(3);
+            if (nv.t() != Value::T::INT) throw VesnaError("-integral 区间数需要整数");
+            n = nv.i();
+            if (n <= 0 || n > 10000000) throw VesnaError("-integral 区间数需在 1~10000000");
+        }
+        if (n % 2 != 0) ++n;
+        auto fval = [&](double x) -> double {
+            auto xe = std::make_shared<Expr>(); xe->k = Expr::K::VAL; xe->val = mkFloat(x);
+            std::vector<std::shared_ptr<Expr>> cargs; cargs.push_back(xe);
+            Value r = call(fname, internId(fname), cargs, env);
+            if (r.t() == Value::T::BOOL || !isNum(r)) throw VesnaError("-integral 函数返回值需要是数字");
+            return numVal(r);
+        };
+        double h = (b - a) / (double)n;
+        double s = fval(a) + fval(b);
+        for (int64_t i = 1; i < n; ++i)
+            s += (i % 2 == 1 ? 4.0 : 2.0) * fval(a + (double)i * h);
+        return mkFloat(s * h / 3.0);
+    }
+    case 235: {  // -deriv(fname; x; h) 中心差分求导
+        Value fnV = ev(0);
+        if (fnV.t() != Value::T::STR) throw VesnaError("-deriv 第一个参数需要函数名字符串");
+        std::string fname = fnV.s();
+        double x = numVal(ev(1));
+        double h = (argc() > 2) ? numVal(ev(2)) : 1e-6;
+        if (h == 0) throw VesnaError("-deriv 步长不能为 0");
+        auto fval = [&](double t) -> double {
+            auto xe = std::make_shared<Expr>(); xe->k = Expr::K::VAL; xe->val = mkFloat(t);
+            std::vector<std::shared_ptr<Expr>> cargs; cargs.push_back(xe);
+            Value r = call(fname, internId(fname), cargs, env);
+            if (r.t() == Value::T::BOOL || !isNum(r)) throw VesnaError("-deriv 函数返回值需要是数字");
+            return numVal(r);
+        };
+        return mkFloat((fval(x + h) - fval(x - h)) / (2.0 * h));
+    }
+    case 236: {  // -series(fname; n) 整数求和 Σ_{i=1..n} f(i)（全整数时精确）
+        Value fnV = ev(0);
+        if (fnV.t() != Value::T::STR) throw VesnaError("-series 第一个参数需要函数名字符串");
+        std::string fname = fnV.s();
+        Value nv = ev(1);
+        if (nv.t() != Value::T::INT) throw VesnaError("-series 第二参数需要整数");
+        int64_t n = nv.i();
+        if (n < 0 || n > 10000000) throw VesnaError("-series 项数需在 0~10000000");
+        auto fval = [&](int64_t i) -> Value {
+            auto xe = std::make_shared<Expr>(); xe->k = Expr::K::VAL; xe->val = mkInt(i);
+            std::vector<std::shared_ptr<Expr>> cargs; cargs.push_back(xe);
+            Value r = call(fname, internId(fname), cargs, env);
+            if (r.t() == Value::T::BOOL || !isNum(r)) throw VesnaError("-series 函数返回值需要是数字");
+            return r;
+        };
+        bool anyFloat = false;
+        for (int64_t i = 1; i <= n; ++i) { Value r = fval(i); if (r.t() == Value::T::FLOAT) anyFloat = true; }
+        if (anyFloat) {
+            double acc = 0;
+            for (int64_t i = 1; i <= n; ++i) acc += numVal(fval(i));
+            return mkFloat(acc);
+        }
+        std::string acc = "0";
+        for (int64_t i = 1; i <= n; ++i) {
+            Value r = fval(i);
+            if (r.t() == Value::T::INT) acc = bigAdd(acc, intToBig(r.i()));
+            else if (r.t() == Value::T::BIG) acc = bigAdd(acc, r.bg());
+        }
+        return bigToValue(acc);
+    }
+
     // ---- 字符 ----
     case 45: {
         Value c = ev(0);
@@ -3553,17 +4009,31 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
         Value v = ev(0);
         if (v.t() != Value::T::LIST && v.t() != Value::T::GROUP) throw VesnaError("-sum 需要列表/组");
         const auto& items = v.t() == Value::T::LIST ? v.list()->items : v.group()->items;
-        bool anyFloat = false;
-        for (auto& x : items) if (x.t() == Value::T::FLOAT) anyFloat = true;
+        bool anyFloat = false, anyBig = false;
+        for (auto& x : items) {
+            if (x.t() == Value::T::FLOAT) anyFloat = true;
+            if (x.t() == Value::T::BIG) anyBig = true;
+        }
         if (anyFloat) {
             double acc = 0;
             for (auto& x : items) {
                 if (x.t() == Value::T::INT) acc += x.i();
                 else if (x.t() == Value::T::FLOAT) acc += x.f();
+                else if (x.t() == Value::T::BIG) acc += numVal(x);
                 else if (x.t() == Value::T::BOOL) acc += x.b() ? 1 : 0;
                 else throw VesnaError("-sum 只能对数字求和");
             }
             return mkFloat(acc);
+        }
+        if (anyBig) {
+            std::string acc = "0";
+            for (auto& x : items) {
+                if (x.t() == Value::T::INT) acc = bigAdd(acc, intToBig(x.i()));
+                else if (x.t() == Value::T::BIG) acc = bigAdd(acc, x.bg());
+                else if (x.t() == Value::T::BOOL) acc = bigAdd(acc, x.b() ? "1" : "0");
+                else throw VesnaError("-sum 只能对数字求和");
+            }
+            return bigToValue(acc);
         }
         int64_t acc = 0;
         for (auto& x : items) {
@@ -3576,7 +4046,12 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
     case 60: {
         Value v = ev(0);
         if (v.t() == Value::T::BOOL || !isNum(v)) throw VesnaError("-abs 需要数字");
-        return v.t() == Value::T::INT ? mkInt(v.i() < 0 ? -v.i() : v.i()) : mkFloat(std::abs(v.f()));
+        if (v.t() == Value::T::INT) return mkInt(v.i() < 0 ? -v.i() : v.i());
+        if (v.t() == Value::T::BIG) {
+            std::string z = bigNormalize(v.bg());
+            return mkBig(z[0] == '-' ? z.substr(1) : z);
+        }
+        return mkFloat(std::abs(v.f()));
     }
     case 61: {
         Value v = ev(0);
@@ -4101,7 +4576,7 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
 
     // ---- 0.4 类型判断 ----
     case 114: return mkBool(ev(0).t() == Value::T::STR);
-    case 115: return mkBool(ev(0).t() == Value::T::INT);
+    case 115: return mkBool(ev(0).t() == Value::T::INT || ev(0).t() == Value::T::BIG);
     case 116: return mkBool(ev(0).t() == Value::T::FLOAT);
     case 117: return mkBool(ev(0).t() == Value::T::BOOL);
     case 118: return mkBool(ev(0).t() == Value::T::LIST);

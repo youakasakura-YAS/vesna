@@ -53,10 +53,10 @@ struct DictVal;
 
 struct Value {
     // 判别联合：T 顺序与 variant index 严格对应（NONE=0 ... DICT=7）
-    enum class T { NONE, BOOL, INT, FLOAT, STR, LIST, GROUP, DICT };
+    enum class T { NONE, BOOL, INT, FLOAT, STR, LIST, GROUP, DICT, BIG };
     std::variant<std::monostate, bool, int64_t, double, std::string,
                  std::shared_ptr<ListVal>, std::shared_ptr<GroupVal>,
-                 std::shared_ptr<DictVal>> v;
+                 std::shared_ptr<DictVal>, std::shared_ptr<std::string>> v;
 
     Value() = default;
     T t() const { return static_cast<T>(v.index()); }
@@ -74,6 +74,8 @@ struct Value {
     const std::shared_ptr<GroupVal>& group() const { return std::get<std::shared_ptr<GroupVal>>(v); }
     std::shared_ptr<DictVal>& dict() { return std::get<std::shared_ptr<DictVal>>(v); }
     const std::shared_ptr<DictVal>& dict() const { return std::get<std::shared_ptr<DictVal>>(v); }
+    std::string& bg() { return *std::get<std::shared_ptr<std::string>>(v); }
+    const std::string& bg() const { return *std::get<std::shared_ptr<std::string>>(v); }
 };
 
 struct ListVal { std::vector<Value> items; };
@@ -91,6 +93,7 @@ Value mkNone();
 Value mkBool(bool b);
 Value mkInt(int64_t i);
 Value mkFloat(double f);
+Value mkBig(std::string s);
 Value mkStr(std::string s);
 Value mkList();
 Value mkGroup();
@@ -114,6 +117,7 @@ struct Expr {
         GROUP, LIST, DICT, INDEX, BUILTIN, INTO, CALL, VAL
     } k;
     bool is_float = false;
+    bool is_big = false;
     int64_t inum = 0;
     double fnum = 0.0;
     std::string str;                 // STR/INTERP/VAR/BUILTIN/CALL 名称、INTO 类型
