@@ -1,0 +1,15 @@
+args = #args(),
+if #len(args) < '3'-
+-print("用法: vesna sed.ves <模式> <替换> <文件>"),
+-#exit('1'),
+
+pattern = args['1'],
+repl = args['2'],
+path = args['3'],
+lines = #lines(#fread(path)),
+
+for line in lines-
+-if #match(line; pattern)-
+--print(#gsub(line; pattern; repl)),
+-else-
+--print(line),

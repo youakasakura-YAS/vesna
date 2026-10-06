@@ -59,10 +59,29 @@ print("[2/6] 创建目录..."),
 print("  OK"),
 
 print("[3/6] 复制文件..."),
-#copy(src + sep + "bin" + sep + exe; target + sep + "bin" + sep + exe),
+src_exe = src + sep + "bin" + sep + exe,
+dst_exe = target + sep + "bin" + sep + exe,
+copy_ok = "false",
+try-
+-#copy(src_exe; dst_exe),
+-copy_ok = "true",
+-catch e-
+-print("  检测到 exe 被占用，尝试热替换..."),
+-try-
+--#rename(dst_exe; dst_exe + ".old"),
+--#copy(src_exe; dst_exe),
+--copy_ok = "true",
+--try-
+---#fremove(dst_exe + ".old"),
+--catch e3-
+---print("  提示: 旧版 " + exe + ".old 已备份，退出所有 vesna 进程后可删除"),
+-catch e2-
+-print("  错误: 无法替换 " + exe + "（请先关闭所有 vesna 进程后重试 --install）"),
+-#exit('1'),
+if copy_ok == "true"-
+-print("  " + exe),
 if #fexists(src + sep + "vesna.ico")-
 -#copy(src + sep + "vesna.ico"; target + sep + "vesna.ico"),
-print("  " + exe),
 files = #ls(src + sep + "lib"),
 for f in files-
 -#copy(src + sep + "lib" + sep + f; target + sep + "lib" + sep + f),

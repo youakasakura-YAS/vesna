@@ -1,0 +1,11 @@
+args = #args(),
+if #len(args) < '1'-
+-print("用法: vesna uniq.ves <文件>"),
+-#exit('1'),
+
+lines = #lines(#fread(args['1'])),
+seen = {},
+for line in lines-
+-if not #has_key(seen; line)-
+--seen[line] = true
+--print(line),

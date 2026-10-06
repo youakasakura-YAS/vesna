@@ -1,0 +1,31 @@
+import csv,
+import json,
+
+args = #args(),
+if #len(args) < '1'-
+-print("用法: vesna csv2json.ves <csv文件>"),
+-#exit('1'),
+
+path = args['1'],
+text = #fread(path),
+rows = csv_parse(text),
+
+if #len(rows) < '1'-
+-print("[]"),
+-#exit('0'),
+
+header = rows['1'],
+result = [],
+
+i = '2',
+while i <= #len(rows)-
+-row = rows[i]
+-obj = {}
+-j = '1'
+-while j <= #len(header)-
+--obj[header[j]] = row[j]
+--j += '1'
+-#append(result; obj)
+-i += '1',
+
+print(json_write(result)),

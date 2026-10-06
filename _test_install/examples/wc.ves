@@ -1,0 +1,16 @@
+args = #args(),
+if #len(args) < '1'-
+-print("用法: vesna wc.ves <文件>"),
+-#exit('1'),
+
+path = args['1'],
+content = #fread(path),
+lines = #lines(content),
+chars = #len(content),
+
+words = '0',
+for line in lines-
+-parts = #findall(line; "[^ \t]+"),
+-words += #len(parts),
+
+print(#str(#len(lines)) + " " + #str(words) + " " + #str(chars) + " " + path),

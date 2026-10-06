@@ -1,0 +1,6 @@
+联系人: alice@example.com
+网站: https://alice.dev
+备用: bob@test.org
+
+服务器: 192.168.1.1
+备份: 10.0.0.1
