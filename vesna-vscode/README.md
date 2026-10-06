@@ -1,6 +1,6 @@
 # Vesna
 
-Vesna language support for Visual Studio Code — native C++ LSP (diagnostics / completion / hover / symbols / folding / go-to-definition / rename / signature help / workspace symbols) plus syntax highlighting for 215 builtins.
+Vesna language support for Visual Studio Code — native C++ LSP (diagnostics / completion / hover / symbols / folding / go-to-definition / rename / signature help / workspace symbols) plus syntax highlighting for 236 builtins.
 
 ## Features
 
