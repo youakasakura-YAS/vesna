@@ -66,8 +66,16 @@ try-
 -#copy(src_exe; dst_exe),
 -copy_ok = "true",
 -catch e-
+-if #contains(e; "(err=5)")-
+--print("  错误: 无权限写入目标目录（请以管理员身份运行 --install）"),
+--#exit('1'),
 -print("  检测到 exe 被占用，尝试热替换..."),
 -try-
+--if #fexists(dst_exe + ".old")-
+---try-
+----#fremove(dst_exe + ".old"),
+---catch e4-
+----print("  提示: 清理旧 .old 失败，继续尝试替换..."),
 --#rename(dst_exe; dst_exe + ".old"),
 --#copy(src_exe; dst_exe),
 --copy_ok = "true",
@@ -76,6 +84,9 @@ try-
 --catch e3-
 ---print("  提示: 旧版 " + exe + ".old 已备份，退出所有 vesna 进程后可删除"),
 -catch e2-
+-if #contains(e2; "(err=5)")-
+--print("  错误: 无权限替换 " + exe + "（请以管理员身份运行 --install）"),
+--#exit('1'),
 -print("  错误: 无法替换 " + exe + "（请先关闭所有 vesna 进程后重试 --install）"),
 -#exit('1'),
 if copy_ok == "true"-

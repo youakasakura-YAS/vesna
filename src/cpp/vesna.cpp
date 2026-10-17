@@ -498,8 +498,29 @@ static void copyPath(const std::string& src, const std::string& dst) {
     } else {
         std::wstring parent = wd.substr(0, wd.find_last_of(L"/\\"));
         if (!parent.empty()) CreateDirectoryW(parent.c_str(), nullptr);
-        if (!CopyFileW(ws.c_str(), wd.c_str(), FALSE))
-            throw VesnaError("-copy 失败: " + src);
+        HANDLE hIn = CreateFileW(ws.c_str(), GENERIC_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+            OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (hIn == INVALID_HANDLE_VALUE)
+            throw VesnaError("-copy 读源失败: " + src + " (err=" +
+                std::to_string((unsigned long)GetLastError()) + ")");
+        HANDLE hOut = CreateFileW(wd.c_str(), GENERIC_WRITE, 0, nullptr,
+            CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (hOut == INVALID_HANDLE_VALUE) {
+            CloseHandle(hIn);
+            throw VesnaError("-copy 写目标失败: " + dst + " (err=" +
+                std::to_string((unsigned long)GetLastError()) + ")");
+        }
+        char buf[65536];
+        DWORD rd = 0, wr = 0;
+        while (ReadFile(hIn, buf, sizeof(buf), &rd, nullptr) && rd > 0) {
+            if (!WriteFile(hOut, buf, rd, &wr, nullptr)) {
+                CloseHandle(hIn); CloseHandle(hOut);
+                throw VesnaError("-copy 写目标失败: " + dst + " (err=" +
+                    std::to_string((unsigned long)GetLastError()) + ")");
+            }
+        }
+        CloseHandle(hIn); CloseHandle(hOut);
     }
 #else
     struct stat st;
