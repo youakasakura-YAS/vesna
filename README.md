@@ -189,8 +189,9 @@ Modules live in `C:\Vesna\lib\` (or ship with this repo), used via `import xxx`:
 |---|---|---|
 | grep 100k log lines | ~2.8s | ~0.24s (≈12×) |
 | loop 10k sum | ~229ms | ~28ms (≈8×) |
+| BIG multiply 100k digits | — | ~0.10s (FFT; 2.10.0 was minutes) |
 
-C++ optimizations (details in [CHANGELOG.md](CHANGELOG.md)): regex cache, literal fast paths, `Value` variant, identifier interning, builtin hash dispatch, `-O3 -flto`, disabled iostream sync.
+C++ optimizations (details in [CHANGELOG.md](CHANGELOG.md)): regex cache, literal fast paths, `Value` variant, identifier interning, builtin hash dispatch, `-O3 -flto`, disabled iostream sync. Big-int arithmetic uses base-10⁴ grouping + Karatsuba (mid-size) + FFT (large), and Knuth Algorithm D for long division.
 
 ---
 

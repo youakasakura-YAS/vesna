@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <charconv>
 #include <cmath>
+#include <complex>
 #include <chrono>
 #include <cctype>
 #include <ctime>
@@ -61,7 +62,7 @@ static std::string bigSub(const std::string& a, const std::string& b);
 static std::string bigMul(const std::string& a, const std::string& b);
 static std::string bigPow(const std::string& a, int64_t n);
 static Value bigToValue(const std::string& n);
-const std::string VERSION = "2.10.0";
+const std::string VERSION = "2.11.0";
 
 
 // ============================================================
@@ -1597,13 +1598,15 @@ static std::string bigAddAbs(const std::string& a, const std::string& b) {   // 
     if (!y.empty() && y[0] == '-') y = y.substr(1);
     std::string r; int carry = 0;
     size_t i = x.size(), j = y.size();
+    r.reserve((i > j ? i : j) + 1);
     while (i || j || carry) {
         int d = carry;
         if (i) d += x[--i] - '0';
         if (j) d += y[--j] - '0';
-        r.insert(r.begin(), char('0' + d % 10));
+        r.push_back(char('0' + d % 10));
         carry = d / 10;
     }
+    std::reverse(r.begin(), r.end());
     return bigNormalize(r);
 }
 static std::string bigSubAbs(const std::string& a, const std::string& b) {   // |a|-|b|（要求 |a|>=|b|）
@@ -1612,12 +1615,14 @@ static std::string bigSubAbs(const std::string& a, const std::string& b) {   // 
     if (!y.empty() && y[0] == '-') y = y.substr(1);
     std::string r; int borrow = 0;
     size_t i = x.size(), j = y.size();
+    r.reserve(i);
     while (i) {
         int d = (x[--i] - '0') - borrow;
         if (j) d -= (y[--j] - '0');
         if (d < 0) { d += 10; borrow = 1; } else borrow = 0;
-        r.insert(r.begin(), char('0' + d));
+        r.push_back(char('0' + d));
     }
+    std::reverse(r.begin(), r.end());
     return bigNormalize(r);
 }
 static std::string bigAdd(const std::string& a, const std::string& b) {
@@ -1643,36 +1648,248 @@ static std::string bigNeg(const std::string& a) {
     if (z == "0") return "0";
     return z[0] == '-' ? z.substr(1) : "-" + z;
 }
+// ---- 大整数乘法加速：O(n^2) → Karatsuba → FFT（基 10^4 / 10^2）----
+// 十进制无符号串 → 基 base 小端系数（width 位/组，base=10^width）
+static std::vector<int32_t> bigToBase(const std::string& s, int width, int base) {
+    std::vector<int32_t> v;
+    int i = (int)s.size();
+    v.reserve((i + width - 1) / width);
+    while (i > 0) {
+        int start = i - width;
+        if (start < 0) start = 0;
+        int val = 0;
+        for (int k = start; k < i; ++k) val = val * 10 + (s[k] - '0');
+        v.push_back((int32_t)val);
+        i = start;
+    }
+    return v;   // 低位在前
+}
+static std::vector<int32_t> bigToBase1e4(const std::string& s) { return bigToBase(s, 4, 10000); }
+static std::vector<int32_t> bigToBase1e2(const std::string& s) { return bigToBase(s, 2, 100); }
+// 基 base（width 位/组）小端系数（可能含未进位的大值）→ 十进制无符号串
+static std::string baseToBig(const std::vector<int64_t>& v, int width) {
+    std::string r;
+    r.reserve(v.size() * (size_t)width + 4);
+    bool first = true;
+    for (int i = (int)v.size() - 1; i >= 0; --i) {
+        if (first && v[i] == 0) continue;   // 跳过前导 0 组
+        std::string part = std::to_string(v[i]);
+        if (!first) while (part.size() < (size_t)width) part = "0" + part;
+        r += part;
+        first = false;
+    }
+    return r.empty() ? "0" : r;
+}
+static std::string base1e4ToBig(const std::vector<int64_t>& v) { return baseToBig(v, 4); }
+// 基 10^4 朴素乘法（小规模），返回未进位系数
+static std::vector<int64_t> mulNaive1e4(const std::vector<int32_t>& a, const std::vector<int32_t>& b) {
+    std::vector<int64_t> acc(a.size() + b.size(), 0);
+    for (size_t i = 0; i < a.size(); ++i)
+        for (size_t j = 0; j < b.size(); ++j)
+            acc[i + j] += (int64_t)a[i] * b[j];
+    return acc;
+}
+// Karatsuba 乘法（基 10^4，递归到 thresh 组以下用朴素），返回未进位系数
+static std::vector<int64_t> mulKaratsuba(const std::vector<int32_t>& a, const std::vector<int32_t>& b, int thresh) {
+    int n = (int)std::max(a.size(), b.size());
+    if (n <= thresh) return mulNaive1e4(a, b);
+    int m = n / 2;
+    size_t am = std::min((size_t)m, a.size()), bm = std::min((size_t)m, b.size());
+    std::vector<int32_t> a0(a.begin(), a.begin() + am), a1(a.begin() + am, a.end());
+    std::vector<int32_t> b0(b.begin(), b.begin() + bm), b1(b.begin() + bm, b.end());
+    std::vector<int64_t> z0 = mulKaratsuba(a0, b0, thresh);
+    std::vector<int64_t> z2 = mulKaratsuba(a1, b1, thresh);
+    // sa = a0+a1, sb = b0+b1（按元素加）
+    std::vector<int32_t> sa(std::max(a0.size(), a1.size()), 0), sb(std::max(b0.size(), b1.size()), 0);
+    for (size_t i = 0; i < a0.size(); ++i) sa[i] += a0[i];
+    for (size_t i = 0; i < a1.size(); ++i) sa[i] += a1[i];
+    for (size_t i = 0; i < b0.size(); ++i) sb[i] += b0[i];
+    for (size_t i = 0; i < b1.size(); ++i) sb[i] += b1[i];
+    std::vector<int64_t> z1 = mulKaratsuba(sa, sb, thresh);
+    std::vector<int64_t> res(a.size() + b.size(), 0);
+    for (size_t i = 0; i < z0.size(); ++i) res[i] += z0[i];
+    for (size_t i = 0; i < z2.size() && i + 2 * (size_t)m < res.size(); ++i) res[i + 2 * m] += z2[i];
+    for (size_t i = 0; i < z1.size() && i + (size_t)m < res.size(); ++i) {
+        int64_t v = z1[i];
+        if (i < z0.size()) v -= z0[i];
+        if (i < z2.size()) v -= z2[i];
+        res[i + m] += v;
+    }
+    return res;
+}
+// 迭代 FFT（Cooley-Tukey）
+static void fftBig(std::vector<std::complex<double>>& a, bool invert) {
+    int n = (int)a.size();
+    for (int i = 1, j = 0; i < n; ++i) {
+        int bit = n >> 1;
+        for (; j & bit; bit >>= 1) j ^= bit;
+        j ^= bit;
+        if (i < j) std::swap(a[i], a[j]);
+    }
+    static const double kPi = 3.14159265358979323846264338327950288;
+    for (int len = 2; len <= n; len <<= 1) {
+        double ang = 2 * kPi / len * (invert ? -1.0 : 1.0);
+        std::complex<double> wlen(std::cos(ang), std::sin(ang));
+        for (int i = 0; i < n; i += len) {
+            std::complex<double> w(1.0, 0.0);
+            for (int j = 0; j < len / 2; ++j) {
+                std::complex<double> u = a[i + j];
+                std::complex<double> v = a[i + j + len / 2] * w;
+                a[i + j] = u + v;
+                a[i + j + len / 2] = u - v;
+                w *= wlen;
+            }
+        }
+    }
+    if (invert) {
+        double inv = 1.0 / n;
+        for (auto& x : a) x *= inv;
+    }
+}
+// FFT 乘法（基 10^2，double 精度余量大），返回未进位系数
+static std::vector<int64_t> mulFFT1e2(const std::vector<int32_t>& a, const std::vector<int32_t>& b) {
+    int n = 1;
+    while (n < (int)(a.size() + b.size())) n <<= 1;
+    std::vector<std::complex<double>> fa(n), fb(n);
+    for (size_t i = 0; i < a.size(); ++i) fa[i] = std::complex<double>((double)a[i], 0.0);
+    for (size_t i = 0; i < b.size(); ++i) fb[i] = std::complex<double>((double)b[i], 0.0);
+    fftBig(fa, false);
+    fftBig(fb, false);
+    for (int i = 0; i < n; ++i) fa[i] *= fb[i];
+    fftBig(fa, true);
+    std::vector<int64_t> res(a.size() + b.size(), 0);
+    for (size_t i = 0; i < res.size(); ++i)
+        res[i] = (int64_t)std::llround(fa[i].real());
+    return res;
+}
 static std::string bigMul(const std::string& a, const std::string& b) {
     std::string x = bigNormalize(a), y = bigNormalize(b);
     bool neg = (x[0] == '-') != (y[0] == '-');
     if (x[0] == '-') x = x.substr(1);
     if (y[0] == '-') y = y.substr(1);
     if (x == "0" || y == "0") return "0";
-    std::vector<int> acc(x.size() + y.size(), 0);
-    for (size_t i = 0; i < x.size(); ++i)
-        for (size_t j = 0; j < y.size(); ++j)
-            acc[i + j] += (x[x.size() - 1 - i] - '0') * (y[y.size() - 1 - j] - '0');
-    for (size_t k = 0; k + 1 < acc.size(); ++k) { acc[k + 1] += acc[k] / 10; acc[k] %= 10; }
-    size_t top = acc.size();
-    while (top > 1 && acc[top - 1] == 0) --top;
-    std::string r;
-    for (size_t k = top; k-- > 0;) r += char('0' + acc[k]);
+    size_t n = std::max(x.size(), y.size());
+    // 小规模（≤64 位）：逐位教科书乘法（无分组开销，最快）
+    if (n <= 64) {
+        std::vector<int> acc(x.size() + y.size(), 0);
+        for (size_t i = 0; i < x.size(); ++i)
+            for (size_t j = 0; j < y.size(); ++j)
+                acc[i + j] += (x[x.size() - 1 - i] - '0') * (y[y.size() - 1 - j] - '0');
+        for (size_t k = 0; k + 1 < acc.size(); ++k) { acc[k + 1] += acc[k] / 10; acc[k] %= 10; }
+        size_t top = acc.size();
+        while (top > 1 && acc[top - 1] == 0) --top;
+        std::string r;
+        r.reserve(top);
+        for (size_t k = top; k-- > 0;) r += char('0' + acc[k]);
+        return neg ? "-" + r : r;
+    }
+    std::vector<int32_t> va = bigToBase1e4(x), vb = bigToBase1e4(y);
+    size_t m = std::max(va.size(), vb.size());
+    std::vector<int64_t> acc;
+    int base;
+    if (m <= 512) {         // ≤ 2048 位：基 10^4 朴素（平方足够快）
+        acc = mulNaive1e4(va, vb);
+        base = 10000;
+    } else if (m <= 1536) { // ≤ 6144 位：Karatsuba
+        acc = mulKaratsuba(va, vb, 512);
+        base = 10000;
+    } else {                // 更大：FFT（基 10^2，double 精度余量大）
+        std::vector<int32_t> v2a = bigToBase1e2(x), v2b = bigToBase1e2(y);
+        acc = mulFFT1e2(v2a, v2b);
+        base = 100;
+    }
+    // 统一进位（幂等）
+    for (size_t k = 0; k + 1 < acc.size(); ++k) { acc[k + 1] += acc[k] / base; acc[k] %= base; }
+    std::string r = baseToBig(acc, base == 100 ? 2 : 4);
     return neg ? "-" + r : r;
 }
-// 长除法：|a| / |b| -> (商, 余数)，调用方保证 b != 0
+// 长除法（Knuth 算法 D，基 10^4）：|a| / |b| -> (商, 余数)，调用方保证 b != 0
 static std::pair<std::string, std::string> bigDivModAbs(const std::string& a, const std::string& b) {
     std::string x = bigNormalize(a), y = bigNormalize(b);
     if (x[0] == '-') x = x.substr(1);
     if (y[0] == '-') y = y.substr(1);
-    std::string q, rem = "0";
-    for (char c : x) {
-        rem = bigAddAbs(rem + "0", std::string(1, c));
-        int qd = 0;
-        while (bigAbsCmp(rem, y) >= 0) { rem = bigSubAbs(rem, y); ++qd; }
-        q += char('0' + qd);
+    if (bigAbsCmp(x, y) < 0) return { "0", x };
+    const int B = 10000;
+    // 基 10^4 小端向量（高位补零到相同可比较）
+    auto toV = [](const std::string& s) {
+        std::vector<int32_t> v;
+        int i = (int)s.size();
+        while (i > 0) {
+            int st = i - 4; if (st < 0) st = 0;
+            int val = 0;
+            for (int k = st; k < i; ++k) val = val * 10 + (s[k] - '0');
+            v.push_back(val);
+            i = st;
+        }
+        return v;
+    };
+    std::vector<int32_t> av = toV(x), bv = toV(y);
+    int n = (int)av.size(), m = (int)bv.size();
+    // 归一化
+    int d = B / (bv[m - 1] + 1);
+    std::vector<int64_t> u(n + m + 1, 0), v(m, 0);
+    int64_t carry = 0;
+    for (int i = 0; i < n; ++i) { int64_t t = (int64_t)av[i] * d + carry; u[i] = t % B; carry = t / B; }
+    u[n] = carry;
+    carry = 0;
+    for (int i = 0; i < m; ++i) { int64_t t = (int64_t)bv[i] * d + carry; v[i] = (int64_t)(t % B); carry = t / B; }
+    // 主循环
+    std::vector<int32_t> q(n - m + 1, 0);
+    for (int j = n - m; j >= 0; --j) {
+        int64_t top = u[j + m] * (int64_t)B + u[j + m - 1];
+        int64_t qhat = top / v[m - 1];
+        int64_t rhat = top % v[m - 1];
+        while (qhat >= B || (m >= 2 && qhat * v[m - 2] > rhat * (int64_t)B + u[j + m - 2])) {
+            --qhat; rhat += v[m - 1];
+            if (rhat >= B) break;
+        }
+        // 乘减 u[j..j+m] -= qhat * v
+        int64_t borrow = 0;
+        for (int k = 0; k < m; ++k) {
+            int64_t prod = qhat * v[k] + borrow;
+            borrow = prod / B;
+            int64_t t = u[j + k] - (prod % B);
+            if (t < 0) { t += B; ++borrow; }
+            u[j + k] = t;
+        }
+        u[j + m] -= borrow;
+        // 若为负：加回，qhat 减 1
+        if (u[j + m] < 0) {
+            int64_t c = 0;
+            for (int k = 0; k < m; ++k) {
+                int64_t t = u[j + k] + v[k] + c;
+                if (t >= B) { t -= B; c = 1; } else c = 0;
+                u[j + k] = t;
+            }
+            u[j + m] += c;
+            --qhat;
+        }
+        q[j] = (int32_t)qhat;
     }
-    return { bigNormalize(q), bigNormalize(rem) };
+    // 余数 = u[0..m-1] / d
+    std::vector<int64_t> rv(m, 0);
+    int64_t rem = 0;
+    for (int i = m - 1; i >= 0; --i) {
+        int64_t cur = rem * (int64_t)B + u[i];
+        rv[i] = cur / d;
+        rem = cur % d;
+    }
+    // 去前导 0 组后转回十进制
+    auto toStr = [](const std::vector<int64_t>& v) {
+        int top = (int)v.size();
+        while (top > 1 && v[top - 1] == 0) --top;
+        std::string r;
+        bool first = true;
+        for (int i = top - 1; i >= 0; --i) {
+            std::string part = std::to_string(v[i]);
+            if (!first) while (part.size() < 4) part = "0" + part;
+            r += part;
+            first = false;
+        }
+        return r.empty() ? "0" : r;
+    };
+    std::vector<int64_t> qv(q.begin(), q.end());
+    return { toStr(qv), toStr(rv) };
 }
 static std::string bigDivTrunc(const std::string& a, const std::string& b) {   // 整除，截断向零
     std::string x = bigNormalize(a), y = bigNormalize(b);
