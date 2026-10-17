@@ -62,7 +62,7 @@ static std::string bigSub(const std::string& a, const std::string& b);
 static std::string bigMul(const std::string& a, const std::string& b);
 static std::string bigPow(const std::string& a, int64_t n);
 static Value bigToValue(const std::string& n);
-const std::string VERSION = "2.11.0";
+const std::string VERSION = "2.11.1";
 
 
 // ============================================================
@@ -2437,10 +2437,10 @@ Value Interp::binop(const std::string& op, const Value& l, const Value& r) {
             std::string base = l.t() == Value::T::BIG ? bigNormalize(l.bg()) : intToBig(l.i());
             if (r.t() == Value::T::INT) {
                 int64_t n = r.i();
-                if (n >= 0 && n <= 100000) return bigToValue(bigPow(base, n));
+                if (n >= 0 && n <= 10000000) return bigToValue(bigPow(base, n));
             } else {
                 double d = numVal(r);
-                if (d >= 0 && d <= 100000 && d == (double)(int64_t)d) return bigToValue(bigPow(base, (int64_t)d));
+                if (d >= 0 && d <= 10000000 && d == (double)(int64_t)d) return bigToValue(bigPow(base, (int64_t)d));
             }
         }
         double x = numVal(l), y = numVal(r);
@@ -4306,6 +4306,19 @@ Value Interp::builtin(const std::string& name, const std::vector<std::shared_ptr
     case 62: {
         Value a = ev(0), b = ev(1);
         if (!isNum(a) || !isNum(b)) throw VesnaError("-pow 需要数字");
+        // 整数底 + 非负整数指数 -> 精确（INT/BIG），上限 1e7 防结果爆炸
+        bool aInt = a.t() == Value::T::INT || a.t() == Value::T::BIG;
+        bool bInt = b.t() == Value::T::INT || b.t() == Value::T::BIG;
+        if (aInt && bInt) {
+            std::string base = a.t() == Value::T::BIG ? bigNormalize(a.bg()) : intToBig(a.i());
+            if (b.t() == Value::T::INT) {
+                int64_t n = b.i();
+                if (n >= 0 && n <= 10000000) return bigToValue(bigPow(base, n));
+            } else {
+                double d = numVal(b);
+                if (d >= 0 && d <= 10000000 && d == (double)(int64_t)d) return bigToValue(bigPow(base, (int64_t)d));
+            }
+        }
         double x = numVal(a), y = numVal(b);
         if (x < 0 && std::floor(y) != y) throw VesnaError("-pow 结果为复数，不支持");
         double r = std::pow(x, y);
