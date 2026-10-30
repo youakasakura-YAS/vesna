@@ -8,7 +8,7 @@
 
 [English](README.md) | [中文](README.zh-CN.md)
 
-![version](https://img.shields.io/badge/version-1.9.0-blue)
+![version](https://img.shields.io/badge/version-2.11.1-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![platform](https://img.shields.io/badge/platform-Windows-x64-lightgrey)
 
@@ -18,7 +18,7 @@
 - **Alternatives**: `awk`, `sed`, `jq`, `perl`
 - **Language spec**: authoritative semantics live in the [Python reference implementation](https://github.com/youakasakura-YAS/vesna-py)
 - **VSCode extension**: [vesna-vscode-extension](https://github.com/youakasakura-YAS/vesna-vscode-extension) (syntax highlighting + LSP)
-- **Performance**: processes 100k log lines in ~240ms; 183 builtins incl. an HTTP server (`#http_server`); single-file standalone exe; native TCP sockets (`#tcp_listen`/`#tcp_send`/...) and file/folder encryption (`#encrypt_file`/`#encrypt_dir`); hardened package manager + LSP go-to-definition/signature hints
+- **Performance**: processes 100k log lines in ~240ms; 236 builtins incl. an HTTP server (`#http_server`); single-file standalone exe; native TCP sockets (`#tcp_listen`/`#tcp_send`/...) and file/folder encryption (`#encrypt_file`/`#encrypt_dir`); arbitrary-precision integers with FFT big-number multiplication; hardened package manager + LSP go-to-definition/signature hints
 - **Syntax**: indentation uses `-`, builtins use `#` prefix, statements end with `,`
 
 ---
@@ -27,7 +27,7 @@
 
 ### 1. Download
 
-Grab `vesna-1.9.0-windows-x64.zip` from [Releases](../../releases) and extract it anywhere. **Single-file distribution**: the standard library is embedded, `vesna.exe` runs with no side files.
+Grab `vesna-2.11.1-windows-x64.zip` from [Releases](../../releases) and extract it anywhere. **Single-file distribution**: the standard library is embedded, `vesna.exe` runs with no side files.
 
 | File | Description |
 |---|---|
@@ -281,6 +281,29 @@ bench\              benchmarks
 ```
 
 The Python reference implementation lives in its own repository: [youakasakura-YAS/vesna-py](https://github.com/youakasakura-YAS/vesna-py).
+
+---
+
+## Version history
+
+Latest release: **2.11.1**. Release notes live here — no separate RELEASE-NOTES files are maintained. Detailed per-version entries: [CHANGELOG.md](CHANGELOG.md).
+
+- **2.11.1** — `**` / `#pow` integer exponent cap raised 100,000 → 10,000,000 (exact BIG powers up to ~9.5M digits); `#pow` now computes exact INT/BIG powers (not just double)
+- **2.11.0** — big-integer multiplication O(n²) → Karatsuba → **FFT** (100k digits: minutes → ~0.1s); Knuth Algorithm D long division; O(n) big add/sub
+- **2.10.0** — **arbitrary-precision integers (BIG)**: int64 overflow auto-promotes, exact `+ - * / % **` on integers, JSON / `#sum` / `#type` support; 21 math builtins (`#pi` `#e` `#log2` `#asin`… `#fact` `#comb` `#perm` `#gcd` `#lcm` `#integral` `#deriv` `#series`) → 236 builtins; installer self-lock fix
+- **2.9.0** — `#readline()`; `vesna-mc` 1.2.0 resident-process mode (zero cold-start for high-frequency bridge events); VSCode ext 2.9.0 (215 builtins highlighted)
+- **2.8.0** — `vesna-mc` 1.1.0: 11 events + timers + 8 action types — Minecraft modding fully driven by Vesna scripts
+- **2.0.0** — debugger: conditional breakpoints, `watch`, `set`, `finish`, `del all`; errors print source line + caret; parse-time string folding; REPL command history
+- **1.9.0** — native TCP sockets (`#tcp_connect` / `#tcp_listen` / `#tcp_accept` / `#tcp_send` / `#tcp_recv` / `#tcp_close`); file/folder encryption (`#encrypt_file` / `#encrypt_dir`)
+- **1.8.0** — vpm hardening: zip path-traversal scan, `entry` filename check, corrupt-cache recovery, offline cache install; LSP go-to-definition / signature hints / workspace symbols; `#sha256` accepts byte lists
+- **1.7.0** — **single-file distribution**: standard library embedded into the exe, runs with no side files
+- **1.6.0** — `#http_server(port; "handler")`; time/UUID/file builtins (`#date_format` `#parse_time` `#uuid` `#file_time` `#truncate` `#arch`)
+- **1.5.0** — `vesna --pkg publish`; `#call` dynamic invocation; `vesna-test` package; `import` respects package `entry`; `vesna --fmt` formatter; REPL Tab completion
+- **1.4.0** — native C++ LSP (`vesna --lsp`); VSCode ext 0.5.0; csv / ini / xml / `#ffi_call_s` builtins; single source of truth for the builtin table
+- **1.3.0 / 1.3.1** — vpm validation (name / version / entry checks, sha256 verification, automatic dependencies, remove guard); `--install` from `bin\` fix
+- **1.2.0** — data / crypto / process / FFI builtins: `#json_encode` / `#json_decode`, `#sha256`, `#aes_encrypt` / `#aes_decrypt`, `#proc_run`, `#ffi_call`
+- **1.1.0** — concurrency (`#thread` / `#lock`), networking (`#http_get` / `#http_post` / `#tcp_ping`), binary (`#bin_read` / `#bin_write`)
+- **1.0.0** — package manager (`vesna --pkg`), debugger (`vesna --debug`), 70 new builtins, CMake cross-platform build, `--uninstall`
 
 ---
 

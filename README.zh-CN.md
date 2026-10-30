@@ -8,7 +8,7 @@
 
 [English](README.md) | [中文](README.zh-CN.md)
 
-![version](https://img.shields.io/badge/version-1.9.0-blue)
+![version](https://img.shields.io/badge/version-2.11.1-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![platform](https://img.shields.io/badge/platform-Windows-x64-lightgrey)
 
@@ -18,7 +18,7 @@
 - **对标**：`awk`、`sed`、`jq`、`perl`
 - **语言规范**：语义权威在 [Python 参考实现](https://github.com/youakasakura-YAS/vesna-py)（独立仓库）
 - **VSCode 插件**：[vesna-vscode-extension](https://github.com/youakasakura-YAS/vesna-vscode-extension)（语法高亮 + LSP）
-- **性能**：处理 10 万行日志约 240ms；183 个内置，含 HTTP 服务（`#http_server`）；单文件独立 exe；原生 TCP 套接字（`#tcp_listen`/`#tcp_send`/...）与文件/文件夹加解密（`#encrypt_file`/`#encrypt_dir`）；加固的包管理器 + LSP 跳转定义/签名提示
+- **性能**：处理 10 万行日志约 240ms；236 个内置，含 HTTP 服务（`#http_server`）；单文件独立 exe；原生 TCP 套接字（`#tcp_listen`/`#tcp_send`/...）与文件/文件夹加解密（`#encrypt_file`/`#encrypt_dir`）；任意精度大整数 + FFT 大数乘法；加固的包管理器 + LSP 跳转定义/签名提示
 - **语法**：缩进用 `-`，内置函数用 `#` 前缀，语句以 `,` 结尾
 
 ---
@@ -27,7 +27,7 @@
 
 ### 1. 下载
 
-从 [Releases](../../releases) 下载 `vesna-1.9.0-windows-x64.zip` 并解压到任意目录。**单文件分发**：标准库已内嵌，`vesna.exe` 无需旁挂文件即可运行。
+从 [Releases](../../releases) 下载 `vesna-2.11.1-windows-x64.zip` 并解压到任意目录。**单文件分发**：标准库已内嵌，`vesna.exe` 无需旁挂文件即可运行。
 
 | 文件 | 说明 |
 |---|---|
@@ -182,6 +182,7 @@ Tier 3 (1.2) — **Data / Crypto / Process / FFI**:
 |---|---|---|
 | grep 10 万行日志 | ~2.8s | ~0.24s（约 12 倍） |
 | 循环 1 万次求和 | ~229ms | ~28ms（约 8 倍） |
+| BIG 乘法 10 万位 | — | ~0.10s（FFT；2.10.0 需分钟级） |
 
 C++ 版优化（详见 [CHANGELOG.md](CHANGELOG.md)）：正则缓存、字面量快速路径、`Value` 判别联合、标识符 intern、内置函数哈希分发、`-O3 -flto` 编译、关闭 IO 同步。
 
@@ -273,6 +274,29 @@ bench\              性能基准
 ```
 
 Python 参考实现位于独立仓库：[youakasakura-YAS/vesna-py](https://github.com/youakasakura-YAS/vesna-py)。
+
+---
+
+## 版本历史
+
+最新版本：**2.11.1**。发布说明直接写在 README，不再单独维护 RELEASE-NOTES 文件。逐版本详情见 [CHANGELOG.md](CHANGELOG.md)。
+
+- **2.11.1** — `**` / `#pow` 整数指数上限 100000 → 10000000（精确 BIG 幂最大约 950 万位）；`#pow` 支持 INT/BIG 底的精确幂（此前仅 double）
+- **2.11.0** — 大数乘法 O(n²) → Karatsuba → **FFT**（10 万位：分钟级 → 约 0.1s）；Knuth 算法 D 长除法；大数加减 O(n)
+- **2.10.0** — **任意精度大整数（BIG）**：int64 溢出自动升级，整数 `+ - * / % **` 全精确，JSON / `#sum` / `#type` 支持；21 个数学内置（`#pi` `#e` `#log2` `#asin`… `#fact` `#comb` `#perm` `#gcd` `#lcm` `#integral` `#deriv` `#series`）→ 236 个内置；安装程序自锁修复
+- **2.9.0** — `#readline()`；`vesna-mc` 1.2.0 常驻进程模式（高频桥接事件零冷启动）；VSCode 插件 2.9.0（高亮 215 内置）
+- **2.8.0** — `vesna-mc` 1.1.0：11 个事件 + 定时任务 + 8 类动作——Minecraft 模组功能完全由 Vesna 脚本驱动
+- **2.0.0** — 调试器：条件断点、`watch`、`set`、`finish`、`del all`；错误带源码行 + `^` 定位；解析期字符串折叠；REPL 命令历史
+- **1.9.0** — 原生 TCP 套接字（`#tcp_connect` / `#tcp_listen` / `#tcp_accept` / `#tcp_send` / `#tcp_recv` / `#tcp_close`）；文件/文件夹加解密（`#encrypt_file` / `#encrypt_dir`）
+- **1.8.0** — vpm 加固：zip 路径穿越扫描、`entry` 文件名校验、损坏缓存自动恢复、离线缓存安装；LSP 跳转定义 / 签名提示 / 工作区符号；`#sha256` 支持字节列表
+- **1.7.0** — **单文件分发**：标准库嵌入 exe，无需旁挂文件即可运行
+- **1.6.0** — `#http_server(port; "handler")`；时间/UUID/文件内置（`#date_format` `#parse_time` `#uuid` `#file_time` `#truncate` `#arch`）
+- **1.5.0** — `vesna --pkg publish`；`#call` 动态调用；`vesna-test` 包；`import` 遵循包 `entry`；`vesna --fmt` 格式化器；REPL Tab 补全
+- **1.4.0** — 原生 C++ LSP（`vesna --lsp`）；VSCode 插件 0.5.0；csv / ini / xml / `#ffi_call_s` 内置；内置表单一来源
+- **1.3.0 / 1.3.1** — vpm 校验（name / version / entry 检查、sha256 校验、依赖自动安装、remove 守卫）；`bin\` 目录内 `--install` 修复
+- **1.2.0** — 数据 / 加密 / 进程 / FFI 内置：`#json_encode` / `#json_decode`、`#sha256`、`#aes_encrypt` / `#aes_decrypt`、`#proc_run`、`#ffi_call`
+- **1.1.0** — 并发（`#thread` / `#lock`）、网络（`#http_get` / `#http_post` / `#tcp_ping`）、二进制（`#bin_read` / `#bin_write`）
+- **1.0.0** — 包管理器（`vesna --pkg`）、调试器（`vesna --debug`）、70 个新内置、CMake 跨平台构建、`--uninstall`
 
 ---
 
