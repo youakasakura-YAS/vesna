@@ -1738,49 +1738,65 @@ static std::vector<int64_t> mulKaratsuba(const std::vector<int32_t>& a, const st
     }
     return res;
 }
-// 迭代 FFT（Cooley-Tukey）
-static void fftBig(std::vector<std::complex<double>>& a, bool invert) {
-    int n = (int)a.size();
+// 迭代 FFT（Cooley-Tukey）：平面 double 数组（可向量化）+ 每层预计算旋转因子表
+static void fftBig(double* re, double* im, int n, bool invert) {
     for (int i = 1, j = 0; i < n; ++i) {
         int bit = n >> 1;
         for (; j & bit; bit >>= 1) j ^= bit;
         j ^= bit;
-        if (i < j) std::swap(a[i], a[j]);
+        if (i < j) {
+            std::swap(re[i], re[j]);
+            std::swap(im[i], im[j]);
+        }
     }
     static const double kPi = 3.14159265358979323846264338327950288;
     for (int len = 2; len <= n; len <<= 1) {
+        int half = len >> 1;
         double ang = 2 * kPi / len * (invert ? -1.0 : 1.0);
-        std::complex<double> wlen(std::cos(ang), std::sin(ang));
+        double wlen_re = std::cos(ang), wlen_im = std::sin(ang);
+        // 预计算 half 个旋转因子（查表代替逐蝶形迭代乘法）
+        std::vector<double> wr(half), wi(half);
+        double w_re = 1.0, w_im = 0.0;
+        for (int j = 0; j < half; ++j) {
+            wr[j] = w_re; wi[j] = w_im;
+            double nr = w_re * wlen_re - w_im * wlen_im;
+            w_im = w_re * wlen_im + w_im * wlen_re;
+            w_re = nr;
+        }
         for (int i = 0; i < n; i += len) {
-            std::complex<double> w(1.0, 0.0);
-            for (int j = 0; j < len / 2; ++j) {
-                std::complex<double> u = a[i + j];
-                std::complex<double> v = a[i + j + len / 2] * w;
-                a[i + j] = u + v;
-                a[i + j + len / 2] = u - v;
-                w *= wlen;
+            for (int j = 0; j < half; ++j) {
+                int a = i + j, b = i + j + half;
+                double u_re = re[a], u_im = im[a];
+                double v_re = re[b] * wr[j] - im[b] * wi[j];
+                double v_im = re[b] * wi[j] + im[b] * wr[j];
+                re[a] = u_re + v_re; im[a] = u_im + v_im;
+                re[b] = u_re - v_re; im[b] = u_im - v_im;
             }
         }
     }
     if (invert) {
         double inv = 1.0 / n;
-        for (auto& x : a) x *= inv;
+        for (int i = 0; i < n; ++i) { re[i] *= inv; im[i] *= inv; }
     }
 }
 // FFT 乘法（基 10^2，double 精度余量大），返回未进位系数
 static std::vector<int64_t> mulFFT1e2(const std::vector<int32_t>& a, const std::vector<int32_t>& b) {
     int n = 1;
     while (n < (int)(a.size() + b.size())) n <<= 1;
-    std::vector<std::complex<double>> fa(n), fb(n);
-    for (size_t i = 0; i < a.size(); ++i) fa[i] = std::complex<double>((double)a[i], 0.0);
-    for (size_t i = 0; i < b.size(); ++i) fb[i] = std::complex<double>((double)b[i], 0.0);
-    fftBig(fa, false);
-    fftBig(fb, false);
-    for (int i = 0; i < n; ++i) fa[i] *= fb[i];
-    fftBig(fa, true);
+    std::vector<double> re(n, 0.0), im(n, 0.0), re2(n, 0.0), im2(n, 0.0);
+    for (size_t i = 0; i < a.size(); ++i) re[i] = (double)a[i];
+    for (size_t i = 0; i < b.size(); ++i) re2[i] = (double)b[i];
+    fftBig(re.data(), im.data(), n, false);
+    fftBig(re2.data(), im2.data(), n, false);
+    for (int i = 0; i < n; ++i) {
+        double tr = re[i] * re2[i] - im[i] * im2[i];
+        double ti = re[i] * im2[i] + im[i] * re2[i];
+        re[i] = tr; im[i] = ti;
+    }
+    fftBig(re.data(), im.data(), n, true);
     std::vector<int64_t> res(a.size() + b.size(), 0);
     for (size_t i = 0; i < res.size(); ++i)
-        res[i] = (int64_t)std::llround(fa[i].real());
+        res[i] = (int64_t)std::llround(re[i]);
     return res;
 }
 static std::string bigMul(const std::string& a, const std::string& b) {
@@ -1814,7 +1830,7 @@ static std::string bigMul(const std::string& a, const std::string& b) {
     } else if (m <= 1536) { // ≤ 6144 位：Karatsuba
         acc = mulKaratsuba(va, vb, 512);
         base = 10000;
-    } else {                // 更大：FFT（基 10^2，double 精度余量大）
+    } else {                // 更大：FFT（基 10^2，double 精度余量足够；内核为平面数组+旋转因子表）
         std::vector<int32_t> v2a = bigToBase1e2(x), v2b = bigToBase1e2(y);
         acc = mulFFT1e2(v2a, v2b);
         base = 100;
